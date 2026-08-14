@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "338914935245",
+    "project_id": "citiride-d7743",
+    "storage_bucket": "citiride-d7743.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:338914935245:android:605080873a073781e6c484",
+        "android_client_info": {
+          "package_name": "com.citiride.citiride"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDwCdjrlTEIWqhVjqHActn_u0yvOT_zf2k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:338914935245:android:6f964ea24c9c3e00e6c484",
+        "android_client_info": {
+          "package_name": "com.example.citiride"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDwCdjrlTEIWqhVjqHActn_u0yvOT_zf2k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
