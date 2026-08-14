@@ -12,6 +12,11 @@ class CitirideOtpClient {
     : _client = client ?? http.Client(),
       _baseUrl = _resolveBaseUrl(baseUrl);
 
+  /// Production OTP API on Railway. Override with:
+  /// `--dart-define=CITIRIDE_OTP_API_URL=https://...`
+  static const productionBaseUrl =
+      'https://otp-api-production-db79.up.railway.app';
+
   static const _configuredBaseUrl = String.fromEnvironment(
     'CITIRIDE_OTP_API_URL',
   );
@@ -27,6 +32,12 @@ class CitirideOtpClient {
       return configured.replaceAll(RegExp(r'/+$'), '');
     }
 
+    // Release / profile builds always use the hosted API.
+    if (kReleaseMode || kProfileMode) {
+      return productionBaseUrl;
+    }
+
+    // Debug builds stay on the local OTP API for faster iteration.
     if (kIsWeb) {
       return 'http://127.0.0.1:8787';
     }

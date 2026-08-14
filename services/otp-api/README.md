@@ -32,5 +32,9 @@ OTP_DEMO_MODE=false
 4. Deploy this folder (Railway, etc.) and point the Flutter app at it:
 
 ```bash
+# Optional override — release APKs already default to the Railway URL.
 flutter run --dart-define=CITIRIDE_OTP_API_URL=https://your-otp-api.example.com
 ```
+
+Release/profile builds use `https://otp-api-production-db79.up.railway.app` by default.
+Debug builds still target the local API on port `8787`.
