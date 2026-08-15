@@ -47,7 +47,19 @@ app.get('/health', (_req, res) => {
     ok: true,
     demoMode,
     hasResendKey: Boolean(resendApiKey),
+    emailTheme: 'branded-light-v2',
+    emailSubject: 'Your CitiRide one-time password',
   });
+});
+
+app.get('/v1/email-preview', (_req, res) => {
+  const html = otpEmailHtml({
+    code: '332922',
+    purpose: 'login',
+    ttlMinutes: Math.round(otpTtlMs / 60000),
+  });
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(html);
 });
 
 app.post('/v1/otp/send', async (req, res) => {
