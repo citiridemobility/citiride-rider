@@ -41,7 +41,7 @@ class _EnterCodeScreenState extends State<EnterCodeScreen> {
   static const _codeLength = 6;
   static const _resendStartSeconds = 11;
   static const _successDelay = Duration(seconds: 2);
-  static const _verificationTimeout = Duration(seconds: 25);
+  static const _verificationTimeout = Duration(seconds: 45);
 
   final _authService = CitirideAuthService();
   final _sessionStore = const CitirideSessionStore();

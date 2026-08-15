@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../core/firebase/firebase_bootstrap.dart';
 import '../../../core/session/citiride_session_store.dart';
+import '../../../shared/widgets/compatible_svg_picture.dart';
 import '../../profile/domain/rider_profile.dart';
 import '../../wallet/presentation/wallet_enrollment_store.dart';
 
@@ -91,32 +92,27 @@ class _SplashScreenState extends State<SplashScreen> {
       child: Scaffold(
         backgroundColor: AppColors.citirideBlack,
         body: SafeArea(
-          // The PNG logo is dark on transparent — nearly invisible on black —
-          // so always show the yellow wordmark with the mark above it.
           child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Image.asset(
-                  'assets/images/citiride_app logo.png',
-                  width: 168,
-                  height: 168,
-                  fit: BoxFit.contain,
-                  gaplessPlayback: true,
-                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
+            child: CompatibleSvgPicture.asset(
+              'assets/images/citiridelogo.svg',
+              width: 168,
+              height: 168,
+              fit: BoxFit.contain,
+              semanticsLabel: 'CitiRide',
+              placeholderBuilder: (_) => const SizedBox(
+                width: 168,
+                height: 168,
+              ),
+              errorBuilder: (context, error, stackTrace) => const Text(
+                'CitiRide',
+                style: TextStyle(
+                  color: AppColors.citirideYellow,
+                  fontSize: 34,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.4,
+                  height: 1,
                 ),
-                const SizedBox(height: 12),
-                const Text(
-                  'CitiRide',
-                  style: TextStyle(
-                    color: AppColors.citirideYellow,
-                    fontSize: 34,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.4,
-                    height: 1,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),

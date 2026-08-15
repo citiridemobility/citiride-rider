@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 
@@ -146,7 +148,7 @@ class CitirideAuthService {
         );
       }
 
-      await _saveEmailProfile(email: cleanEmail);
+      unawaited(_saveEmailProfile(email: cleanEmail));
       return CitirideAuthResult(
         mode: CitiridePhoneVerificationMode.demo,
         email: cleanEmail,
@@ -159,7 +161,9 @@ class CitirideAuthService {
         code: code,
         purpose: purpose,
       );
-      await _saveEmailProfile(email: cleanEmail);
+      // Never block login on Firestore — it was causing mobile OTP timeouts
+      // after the server had already verified the code and sent welcome mail.
+      unawaited(_saveEmailProfile(email: cleanEmail));
       return CitirideAuthResult(
         mode: CitiridePhoneVerificationMode.demo,
         email: cleanEmail,
@@ -180,12 +184,16 @@ class CitirideAuthService {
 
     try {
       final docId = email.replaceAll(RegExp(r'[^a-z0-9@._+-]'), '_');
-      await _firebaseFirestore.collection('riders').doc(docId).set({
-        'email': email,
-        'authProvider': 'email_otp',
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-    } on FirebaseException {
+      await _firebaseFirestore
+          .collection('riders')
+          .doc(docId)
+          .set({
+            'email': email,
+            'authProvider': 'email_otp',
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true))
+          .timeout(const Duration(seconds: 4));
+    } on Object {
       // Auth success should not be blocked by profile persistence failure.
     }
   }

@@ -7,7 +7,6 @@ import express from 'express';
 import { Resend } from 'resend';
 
 import {
-  logoAttachment,
   otpEmailHtml,
   otpEmailText,
   riderWelcomeEmailHtml,
@@ -97,14 +96,12 @@ app.post('/v1/otp/send', async (req, res) => {
       }
 
       const ttlMinutes = Math.round(otpTtlMs / 60000);
-      const logo = logoAttachment();
       const { error } = await resend.emails.send({
         from: fromEmail,
         to: [email],
         subject: 'Your CitiRide verification code',
         html: otpEmailHtml({ code, purpose, ttlMinutes }),
         text: otpEmailText({ code, purpose, ttlMinutes }),
-        ...(logo ? { attachments: [logo] } : {}),
       });
 
       if (error) {
@@ -228,14 +225,12 @@ async function sendRiderWelcomeEmail(email) {
   welcomeSent.add(email);
 
   try {
-    const logo = logoAttachment();
     const { error } = await resend.emails.send({
       from: fromEmail,
       to: [email],
       subject: 'Welcome to CitiRide',
       html: riderWelcomeEmailHtml({ email }),
       text: riderWelcomeEmailText({ email }),
-      ...(logo ? { attachments: [logo] } : {}),
     });
 
     if (error) {

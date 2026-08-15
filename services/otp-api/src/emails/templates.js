@@ -1,29 +1,23 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const logoPath = path.join(__dirname, '../../public/citiride-logo.png');
-
 export const brand = {
   black: '#161616',
   yellow: '#F5E700',
-  muted: '#8F8F8F',
+  muted: '#A3A3A3',
+  soft: '#6B6B6B',
   white: '#FFFFFF',
-  card: '#1C1C1C',
+  card: '#1A1A1A',
   font: "'Poppins', Arial, Helvetica, sans-serif",
 };
 
-export function logoAttachment() {
-  if (!fs.existsSync(logoPath)) {
-    return null;
-  }
+export function publicLogoUrl() {
+  const raw = (
+    process.env.PUBLIC_BASE_URL ||
+    process.env.RAILWAY_PUBLIC_DOMAIN ||
+    'https://otp-api-production-db79.up.railway.app'
+  ).trim();
 
-  return {
-    filename: 'citiride-logo.png',
-    content: fs.readFileSync(logoPath),
-    contentId: 'citiride-logo',
-  };
+  const base = raw.replace(/\/+$/, '');
+  const withProtocol = /^https?:\/\//i.test(base) ? base : `https://${base}`;
+  return `${withProtocol}/assets/citiride-logo.png`;
 }
 
 export function otpEmailHtml({ code, purpose, ttlMinutes }) {
@@ -36,22 +30,25 @@ export function otpEmailHtml({ code, purpose, ttlMinutes }) {
 
   return emailShell({
     preheader: `Your CitiRide code is ${code}`,
-    title: 'Verify your email',
+    title: 'Your verification code',
     bodyHtml: `
-      <p style="margin:0 0 18px;color:${brand.muted};font-size:15px;line-height:1.55;font-family:${brand.font};">
-        Use this code to continue your CitiRide ${purposeLabel}.
+      <p style="margin:0 0 28px;color:${brand.muted};font-size:15px;line-height:1.6;font-family:${brand.font};">
+        Enter this code to continue your CitiRide ${purposeLabel}.
       </p>
-      <div style="margin:0 0 22px;padding:18px 16px;border-radius:16px;background:${brand.black};border:1px solid rgba(245,231,0,0.28);text-align:center;">
-        <p style="margin:0 0 8px;color:${brand.muted};font-size:12px;letter-spacing:0.08em;text-transform:uppercase;font-family:${brand.font};">
-          Verification code
-        </p>
-        <p style="margin:0;color:${brand.yellow};font-size:34px;font-weight:800;letter-spacing:0.28em;font-family:${brand.font};">
-          ${code}
-        </p>
-      </div>
-      <p style="margin:0;color:${brand.muted};font-size:13px;line-height:1.5;font-family:${brand.font};">
-        This code expires in <strong style="color:${brand.white};">${ttlMinutes} minutes</strong>.
-        If you did not request it, you can ignore this email.
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 28px;">
+        <tr>
+          <td align="center" style="padding:22px 16px;border-radius:18px;background:${brand.black};">
+            <p style="margin:0 0 10px;color:${brand.soft};font-size:11px;font-weight:600;letter-spacing:0.16em;text-transform:uppercase;font-family:${brand.font};">
+              Code
+            </p>
+            <p style="margin:0;color:${brand.yellow};font-size:36px;font-weight:700;letter-spacing:0.34em;line-height:1;font-family:${brand.font};">
+              ${code}
+            </p>
+          </td>
+        </tr>
+      </table>
+      <p style="margin:0;color:${brand.soft};font-size:13px;line-height:1.55;font-family:${brand.font};">
+        Expires in ${ttlMinutes} minutes. If you didn’t request this, ignore this email.
       </p>
     `,
   });
@@ -66,9 +63,9 @@ export function otpEmailText({ code, purpose, ttlMinutes }) {
         : 'sign-in';
 
   return [
-    'CitiRide verification',
+    'CitiRide',
     '',
-    `Your code for ${purposeLabel}: ${code}`,
+    `Your verification code for ${purposeLabel}: ${code}`,
     `Expires in ${ttlMinutes} minutes.`,
     '',
     'If you did not request this, ignore this email.',
@@ -79,28 +76,47 @@ export function riderWelcomeEmailHtml({ email }) {
   const firstName = guessFirstName(email);
 
   return emailShell({
-    preheader: 'Welcome to CitiRide — rides made simple.',
-    title: `Welcome aboard${firstName ? `, ${firstName}` : ''}!`,
+    preheader: 'Welcome to CitiRide. Your rider account is ready.',
+    title: firstName ? `Welcome, ${firstName}` : 'Welcome to CitiRide',
     bodyHtml: `
-      <p style="margin:0 0 14px;color:${brand.muted};font-size:15px;line-height:1.55;font-family:${brand.font};">
-        You are all set as a <strong style="color:${brand.white};">CitiRide rider</strong>.
-        Book reliable trips, track your ride live, and pay your way — all in one place.
+      <p style="margin:0 0 22px;color:${brand.muted};font-size:15px;line-height:1.65;font-family:${brand.font};">
+        Your rider account is ready. Move through the city with clear pricing, live tracking, and a wallet that stays with you.
       </p>
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 20px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 28px;">
         <tr>
-          <td style="padding:12px 14px;border-radius:14px;background:${brand.black};border:1px solid rgba(255,255,255,0.08);">
-            <p style="margin:0 0 6px;color:${brand.yellow};font-size:13px;font-weight:700;font-family:${brand.font};">
-              What you can do next
+          <td style="padding:0 0 12px;">
+            <p style="margin:0;color:${brand.white};font-size:14px;font-weight:600;line-height:1.5;font-family:${brand.font};">
+              Set your pickup
             </p>
-            <p style="margin:0;color:${brand.muted};font-size:14px;line-height:1.55;font-family:${brand.font};">
-              Set your pickup, choose a ride, and head out. Your profile and wallet stay ready whenever you need them.
+            <p style="margin:4px 0 0;color:${brand.soft};font-size:13px;line-height:1.5;font-family:${brand.font};">
+              Choose where you’re headed and confirm your ride.
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:12px 0;border-top:1px solid rgba(255,255,255,0.06);">
+            <p style="margin:0;color:${brand.white};font-size:14px;font-weight:600;line-height:1.5;font-family:${brand.font};">
+              Track in real time
+            </p>
+            <p style="margin:4px 0 0;color:${brand.soft};font-size:13px;line-height:1.5;font-family:${brand.font};">
+              Follow your driver from pickup to drop-off.
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:12px 0 0;border-top:1px solid rgba(255,255,255,0.06);">
+            <p style="margin:0;color:${brand.white};font-size:14px;font-weight:600;line-height:1.5;font-family:${brand.font};">
+              Pay your way
+            </p>
+            <p style="margin:4px 0 0;color:${brand.soft};font-size:13px;line-height:1.5;font-family:${brand.font};">
+              Cash or wallet — whichever is easiest for you.
             </p>
           </td>
         </tr>
       </table>
-      <p style="margin:0;color:${brand.muted};font-size:13px;line-height:1.5;font-family:${brand.font};">
-        Ride safe,<br/>
-        <strong style="color:${brand.white};">The CitiRide team</strong>
+      <p style="margin:0;color:${brand.soft};font-size:13px;line-height:1.55;font-family:${brand.font};">
+        Open the app and take your first ride.<br/><br/>
+        — CitiRide
       </p>
     `,
   });
@@ -109,65 +125,64 @@ export function riderWelcomeEmailHtml({ email }) {
 export function riderWelcomeEmailText({ email }) {
   const firstName = guessFirstName(email);
   return [
-    `Welcome aboard${firstName ? `, ${firstName}` : ''}!`,
+    firstName ? `Welcome, ${firstName}` : 'Welcome to CitiRide',
     '',
-    'You are all set as a CitiRide rider.',
-    'Book reliable trips, track your ride live, and pay your way — all in one place.',
+    'Your rider account is ready. Move through the city with clear pricing, live tracking, and a wallet that stays with you.',
     '',
-    'Ride safe,',
-    'The CitiRide team',
+    'Open the app and take your first ride.',
+    '',
+    '— CitiRide',
   ].join('\n');
 }
 
 function emailShell({ preheader, title, bodyHtml }) {
+  const logoUrl = publicLogoUrl();
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="color-scheme" content="dark" />
-  <meta name="supported-color-schemes" content="dark" />
+  <meta name="color-scheme" content="dark light" />
   <title>${escapeHtml(title)}</title>
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <!--[if !mso]><!-->
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <!--<![endif]-->
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap');
-    body, table, td, p, a { font-family: ${brand.font}; }
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
   </style>
 </head>
-<body style="margin:0;padding:0;background:${brand.black};">
-  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
+<body style="margin:0;padding:0;background:#0E0E0E;">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;mso-hide:all;">
     ${escapeHtml(preheader)}
   </div>
-  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${brand.black};padding:28px 16px;">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#0E0E0E;margin:0;padding:0;">
     <tr>
-      <td align="center">
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:560px;background:${brand.card};border-radius:24px;border:1px solid rgba(245,231,0,0.18);overflow:hidden;">
+      <td align="center" style="padding:40px 20px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:480px;background:${brand.card};border-radius:28px;overflow:hidden;">
           <tr>
-            <td style="padding:28px 28px 8px;text-align:center;background:linear-gradient(180deg, #222200 0%, ${brand.card} 100%);">
+            <td align="center" style="padding:36px 32px 8px;">
               <img
-                src="cid:citiride-logo"
-                width="88"
-                height="88"
+                src="${logoUrl}"
+                width="72"
+                height="72"
                 alt="CitiRide"
-                style="display:block;margin:0 auto 14px;border:0;outline:none;width:88px;height:88px;"
+                style="display:block;margin:0 auto;border:0;outline:none;text-decoration:none;width:72px;height:72px;"
               />
-              <p style="margin:0;color:${brand.yellow};font-size:22px;font-weight:800;letter-spacing:0.02em;font-family:${brand.font};">
-                CitiRide
-              </p>
             </td>
           </tr>
           <tr>
-            <td style="padding:8px 28px 28px;">
-              <h1 style="margin:0 0 14px;color:${brand.white};font-size:24px;font-weight:700;line-height:1.25;font-family:${brand.font};">
+            <td style="padding:20px 32px 36px;">
+              <h1 style="margin:0 0 12px;color:${brand.white};font-size:26px;font-weight:600;line-height:1.25;letter-spacing:-0.02em;font-family:${brand.font};">
                 ${escapeHtml(title)}
               </h1>
               ${bodyHtml}
             </td>
           </tr>
           <tr>
-            <td style="padding:16px 28px 24px;border-top:1px solid rgba(255,255,255,0.08);">
-              <p style="margin:0;color:${brand.muted};font-size:12px;line-height:1.45;text-align:center;font-family:${brand.font};">
-                © ${new Date().getFullYear()} CitiRide Mobility. All rights reserved.
+            <td style="padding:0 32px 28px;">
+              <p style="margin:0;padding-top:20px;border-top:1px solid rgba(255,255,255,0.06);color:${brand.soft};font-size:11px;line-height:1.5;text-align:center;font-family:${brand.font};">
+                © ${new Date().getFullYear()} CitiRide Mobility
               </p>
             </td>
           </tr>
