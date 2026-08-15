@@ -1,11 +1,14 @@
 export const brand = {
   black: '#161616',
   yellow: '#F5E700',
-  muted: '#A3A3A3',
-  soft: '#6B6B6B',
+  muted: '#5C5C5C',
+  soft: '#8A8A8A',
   white: '#FFFFFF',
-  card: '#1A1A1A',
-  font: "'Poppins', Arial, Helvetica, sans-serif",
+  page: '#EEEEEA',
+  card: '#FFFFFF',
+  border: '#E6E6E0',
+  codeBox: '#161616',
+  font: "Arial, Helvetica, sans-serif",
 };
 
 export function publicLogoUrl() {
@@ -20,53 +23,58 @@ export function publicLogoUrl() {
   return `${withProtocol}/assets/citiride-logo.png`;
 }
 
+function otpPurposeLabel(purpose) {
+  if (purpose === 'wallet') {
+    return 'wallet setup';
+  }
+  if (purpose === 'reset_pin') {
+    return 'PIN reset';
+  }
+  if (purpose === 'withdraw') {
+    return 'wallet withdrawal';
+  }
+  return 'sign-up';
+}
+
 export function otpEmailHtml({ code, purpose, ttlMinutes }) {
-  const purposeLabel =
-    purpose === 'wallet'
-      ? 'wallet setup'
-      : purpose === 'reset_pin'
-        ? 'PIN reset'
-        : 'sign-in';
+  const purposeLabel = otpPurposeLabel(purpose);
+  const safeCode = escapeHtml(code);
 
   return emailShell({
-    preheader: `Your CitiRide code is ${code}`,
-    title: 'Your verification code',
+    preheader: `Your CitiRide one-time password is ${code}`,
+    title: 'Your one-time password',
     bodyHtml: `
-      <p style="margin:0 0 28px;color:${brand.muted};font-size:15px;line-height:1.6;font-family:${brand.font};">
-        Enter this code to continue your CitiRide ${purposeLabel}.
+      <p style="margin:0 0 24px;color:${brand.muted};font-size:15px;line-height:1.6;font-family:${brand.font};">
+        Use this one-time password (OTP) to continue your CitiRide ${escapeHtml(purposeLabel)}. Do not share it with anyone.
       </p>
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 28px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 24px;border-collapse:collapse;">
         <tr>
-          <td align="center" style="padding:22px 16px;border-radius:18px;background:${brand.black};">
-            <p style="margin:0 0 10px;color:${brand.soft};font-size:11px;font-weight:600;letter-spacing:0.16em;text-transform:uppercase;font-family:${brand.font};">
-              Code
+          <td align="center" bgcolor="${brand.codeBox}" style="padding:24px 16px;border-radius:16px;background-color:${brand.codeBox};">
+            <p style="margin:0 0 10px;color:#B0B0B0;font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;font-family:${brand.font};">
+              One-time password
             </p>
-            <p style="margin:0;color:${brand.yellow};font-size:36px;font-weight:700;letter-spacing:0.34em;line-height:1;font-family:${brand.font};">
-              ${code}
+            <p style="margin:0;color:${brand.yellow};font-size:34px;font-weight:700;letter-spacing:0.28em;line-height:1.2;font-family:${brand.font};">
+              ${safeCode}
             </p>
           </td>
         </tr>
       </table>
       <p style="margin:0;color:${brand.soft};font-size:13px;line-height:1.55;font-family:${brand.font};">
-        Expires in ${ttlMinutes} minutes. If you didn’t request this, ignore this email.
+        Expires in ${escapeHtml(String(ttlMinutes))} minutes. If you didn’t request this, ignore this email.
       </p>
     `,
   });
 }
 
 export function otpEmailText({ code, purpose, ttlMinutes }) {
-  const purposeLabel =
-    purpose === 'wallet'
-      ? 'wallet setup'
-      : purpose === 'reset_pin'
-        ? 'PIN reset'
-        : 'sign-in';
+  const purposeLabel = otpPurposeLabel(purpose);
 
   return [
     'CitiRide',
     '',
-    `Your verification code for ${purposeLabel}: ${code}`,
+    `Your one-time password (OTP) for ${purposeLabel}: ${code}`,
     `Expires in ${ttlMinutes} minutes.`,
+    'Do not share this code with anyone.',
     '',
     'If you did not request this, ignore this email.',
   ].join('\n');
@@ -82,10 +90,10 @@ export function riderWelcomeEmailHtml({ email }) {
       <p style="margin:0 0 22px;color:${brand.muted};font-size:15px;line-height:1.65;font-family:${brand.font};">
         Your rider account is ready. Move through the city with clear pricing, live tracking, and a wallet that stays with you.
       </p>
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 28px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 24px;border-collapse:collapse;">
         <tr>
-          <td style="padding:0 0 12px;">
-            <p style="margin:0;color:${brand.white};font-size:14px;font-weight:600;line-height:1.5;font-family:${brand.font};">
+          <td style="padding:0 0 14px;">
+            <p style="margin:0;color:${brand.black};font-size:14px;font-weight:700;line-height:1.5;font-family:${brand.font};">
               Set your pickup
             </p>
             <p style="margin:4px 0 0;color:${brand.soft};font-size:13px;line-height:1.5;font-family:${brand.font};">
@@ -94,8 +102,8 @@ export function riderWelcomeEmailHtml({ email }) {
           </td>
         </tr>
         <tr>
-          <td style="padding:12px 0;border-top:1px solid rgba(255,255,255,0.06);">
-            <p style="margin:0;color:${brand.white};font-size:14px;font-weight:600;line-height:1.5;font-family:${brand.font};">
+          <td style="padding:14px 0;border-top:1px solid ${brand.border};">
+            <p style="margin:0;color:${brand.black};font-size:14px;font-weight:700;line-height:1.5;font-family:${brand.font};">
               Track in real time
             </p>
             <p style="margin:4px 0 0;color:${brand.soft};font-size:13px;line-height:1.5;font-family:${brand.font};">
@@ -104,8 +112,8 @@ export function riderWelcomeEmailHtml({ email }) {
           </td>
         </tr>
         <tr>
-          <td style="padding:12px 0 0;border-top:1px solid rgba(255,255,255,0.06);">
-            <p style="margin:0;color:${brand.white};font-size:14px;font-weight:600;line-height:1.5;font-family:${brand.font};">
+          <td style="padding:14px 0 0;border-top:1px solid ${brand.border};">
+            <p style="margin:0;color:${brand.black};font-size:14px;font-weight:700;line-height:1.5;font-family:${brand.font};">
               Pay your way
             </p>
             <p style="margin:4px 0 0;color:${brand.soft};font-size:13px;line-height:1.5;font-family:${brand.font};">
@@ -137,31 +145,35 @@ export function riderWelcomeEmailText({ email }) {
 
 function emailShell({ preheader, title, bodyHtml }) {
   const logoUrl = publicLogoUrl();
+  const year = new Date().getFullYear();
 
+  // Light card layout: survives Gmail/Outlook dark-mode inversion better than
+  // dark-on-dark templates (which often leave only the yellow OTP visible).
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="color-scheme" content="dark light" />
+  <meta name="color-scheme" content="light only" />
+  <meta name="supported-color-schemes" content="light only" />
   <title>${escapeHtml(title)}</title>
-  <!--[if !mso]><!-->
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <!--<![endif]-->
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+    :root { color-scheme: light only; supported-color-schemes: light only; }
+    body, table, td, p, a, li, blockquote { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+    img { -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }
   </style>
 </head>
-<body style="margin:0;padding:0;background:#0E0E0E;">
-  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;mso-hide:all;">
+<body style="margin:0;padding:0;background-color:${brand.page};background:${brand.page};">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;mso-hide:all;font-size:1px;line-height:1px;">
     ${escapeHtml(preheader)}
   </div>
-  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#0E0E0E;margin:0;padding:0;">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="${brand.page}" style="background-color:${brand.page};margin:0;padding:0;border-collapse:collapse;">
     <tr>
-      <td align="center" style="padding:40px 20px;">
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:480px;background:${brand.card};border-radius:28px;overflow:hidden;">
+      <td align="center" style="padding:36px 16px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="${brand.card}" style="max-width:480px;background-color:${brand.card};border:1px solid ${brand.border};border-radius:24px;overflow:hidden;border-collapse:separate;">
           <tr>
-            <td align="center" style="padding:36px 32px 8px;">
+            <td align="center" bgcolor="${brand.card}" style="padding:32px 28px 8px;background-color:${brand.card};">
               <img
                 src="${logoUrl}"
                 width="72"
@@ -172,17 +184,20 @@ function emailShell({ preheader, title, bodyHtml }) {
             </td>
           </tr>
           <tr>
-            <td style="padding:20px 32px 36px;">
-              <h1 style="margin:0 0 12px;color:${brand.white};font-size:26px;font-weight:600;line-height:1.25;letter-spacing:-0.02em;font-family:${brand.font};">
+            <td bgcolor="${brand.yellow}" style="height:4px;line-height:4px;font-size:0;background-color:${brand.yellow};">&nbsp;</td>
+          </tr>
+          <tr>
+            <td bgcolor="${brand.card}" style="padding:24px 28px 32px;background-color:${brand.card};">
+              <h1 style="margin:0 0 14px;color:${brand.black};font-size:24px;font-weight:700;line-height:1.25;letter-spacing:-0.02em;font-family:${brand.font};">
                 ${escapeHtml(title)}
               </h1>
               ${bodyHtml}
             </td>
           </tr>
           <tr>
-            <td style="padding:0 32px 28px;">
-              <p style="margin:0;padding-top:20px;border-top:1px solid rgba(255,255,255,0.06);color:${brand.soft};font-size:11px;line-height:1.5;text-align:center;font-family:${brand.font};">
-                © ${new Date().getFullYear()} CitiRide Mobility
+            <td bgcolor="${brand.card}" style="padding:0 28px 26px;background-color:${brand.card};">
+              <p style="margin:0;padding-top:18px;border-top:1px solid ${brand.border};color:${brand.soft};font-size:11px;line-height:1.5;text-align:center;font-family:${brand.font};">
+                © ${year} CitiRide Mobility
               </p>
             </td>
           </tr>

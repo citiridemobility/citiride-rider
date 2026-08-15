@@ -99,7 +99,7 @@ app.post('/v1/otp/send', async (req, res) => {
       const { error } = await resend.emails.send({
         from: fromEmail,
         to: [email],
-        subject: 'Your CitiRide verification code',
+        subject: 'Your CitiRide one-time password',
         html: otpEmailHtml({ code, purpose, ttlMinutes }),
         text: otpEmailText({ code, purpose, ttlMinutes }),
       });
@@ -257,7 +257,7 @@ function normalizePurpose(value) {
   const purpose = String(value || 'login')
     .trim()
     .toLowerCase();
-  if (['login', 'wallet', 'reset_pin'].includes(purpose)) {
+  if (['login', 'wallet', 'reset_pin', 'withdraw'].includes(purpose)) {
     return purpose;
   }
   return 'login';
