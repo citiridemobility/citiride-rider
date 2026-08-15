@@ -1,7 +1,21 @@
 import crypto from 'node:crypto';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import cors from 'cors';
 import express from 'express';
 import { Resend } from 'resend';
+
+import {
+  logoAttachment,
+  otpEmailHtml,
+  otpEmailText,
+  riderWelcomeEmailHtml,
+  riderWelcomeEmailText,
+} from './emails/templates.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const publicDir = path.join(__dirname, '../public');
 
 const app = express();
 const port = Number(process.env.PORT || 8787);
@@ -22,8 +36,12 @@ const resend = resendApiKey ? new Resend(resendApiKey) : null;
 /** @type {Map<string, { hash: string, salt: string, expiresAt: number, attempts: number, lastSentAt: number }>} */
 const otpStore = new Map();
 
+/** Avoid spamming welcome mail on repeated logins in the same process. */
+const welcomeSent = new Set();
+
 app.use(cors());
 app.use(express.json({ limit: '32kb' }));
+app.use('/assets', express.static(publicDir, { maxAge: '7d' }));
 
 app.get('/health', (_req, res) => {
   res.json({
@@ -78,12 +96,15 @@ app.post('/v1/otp/send', async (req, res) => {
         });
       }
 
+      const ttlMinutes = Math.round(otpTtlMs / 60000);
+      const logo = logoAttachment();
       const { error } = await resend.emails.send({
         from: fromEmail,
         to: [email],
         subject: 'Your CitiRide verification code',
-        html: otpEmailHtml({ code, purpose, ttlMinutes: Math.round(otpTtlMs / 60000) }),
-        text: `Your CitiRide verification code is ${code}. It expires in ${Math.round(otpTtlMs / 60000)} minutes.`,
+        html: otpEmailHtml({ code, purpose, ttlMinutes }),
+        text: otpEmailText({ code, purpose, ttlMinutes }),
+        ...(logo ? { attachments: [logo] } : {}),
       });
 
       if (error) {
@@ -112,7 +133,7 @@ app.post('/v1/otp/send', async (req, res) => {
   }
 });
 
-app.post('/v1/otp/verify', (req, res) => {
+app.post('/v1/otp/verify', async (req, res) => {
   try {
     const email = normalizeEmail(req.body?.email);
     const purpose = normalizePurpose(req.body?.purpose);
@@ -169,6 +190,11 @@ app.post('/v1/otp/verify', (req, res) => {
     }
 
     otpStore.delete(key);
+
+    if (purpose === 'login') {
+      void sendRiderWelcomeEmail(email);
+    }
+
     return res.json({
       ok: true,
       email,
@@ -189,6 +215,38 @@ app.listen(port, () => {
     `CitiRide OTP API listening on :${port} (demoMode=${demoMode}, hasResendKey=${Boolean(resendApiKey)})`,
   );
 });
+
+async function sendRiderWelcomeEmail(email) {
+  if (demoMode || !resend) {
+    return;
+  }
+
+  if (welcomeSent.has(email)) {
+    return;
+  }
+
+  welcomeSent.add(email);
+
+  try {
+    const logo = logoAttachment();
+    const { error } = await resend.emails.send({
+      from: fromEmail,
+      to: [email],
+      subject: 'Welcome to CitiRide',
+      html: riderWelcomeEmailHtml({ email }),
+      text: riderWelcomeEmailText({ email }),
+      ...(logo ? { attachments: [logo] } : {}),
+    });
+
+    if (error) {
+      welcomeSent.delete(email);
+      console.error('welcome email failed', error);
+    }
+  } catch (error) {
+    welcomeSent.delete(email);
+    console.error('welcome email failed', error);
+  }
+}
 
 function normalizeEmail(value) {
   const email = String(value || '')
@@ -220,22 +278,4 @@ function generateOtp() {
 
 function hashOtp(code, salt) {
   return crypto.createHash('sha256').update(`${salt}:${code}`).digest('hex');
-}
-
-function otpEmailHtml({ code, purpose, ttlMinutes }) {
-  const purposeLabel =
-    purpose === 'wallet'
-      ? 'wallet verification'
-      : purpose === 'reset_pin'
-        ? 'PIN reset'
-        : 'sign-in';
-
-  return `
-  <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111;">
-    <h2 style="margin-bottom: 8px;">CitiRide verification</h2>
-    <p>Use this code to continue your ${purposeLabel}:</p>
-    <p style="font-size: 28px; font-weight: 700; letter-spacing: 6px; margin: 20px 0;">${code}</p>
-    <p>This code expires in ${ttlMinutes} minutes. If you did not request it, you can ignore this email.</p>
-  </div>
-  `;
 }
