@@ -12,6 +12,10 @@ import {
   riderWelcomeEmailHtml,
   riderWelcomeEmailText,
 } from './emails/templates.js';
+import {
+  createRiderCustomToken,
+  hasFirebaseAdmin,
+} from './firebase-admin.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, '../public');
@@ -35,8 +39,12 @@ const resend = resendApiKey ? new Resend(resendApiKey) : null;
 /** @type {Map<string, { hash: string, salt: string, expiresAt: number, attempts: number, lastSentAt: number }>} */
 const otpStore = new Map();
 
-/** Avoid spamming welcome mail on repeated logins in the same process. */
-const welcomeSent = new Set();
+/** Avoid spamming welcome mail on repeated logins in a short window. */
+/** @type {Map<string, number>} email -> last successful welcome send (ms) */
+const welcomeSentAt = new Map();
+const welcomeCooldownMs = Number(
+  process.env.OTP_WELCOME_COOLDOWN_MS || 24 * 60 * 60 * 1000,
+);
 
 app.use(cors());
 app.use(express.json({ limit: '32kb' }));
@@ -47,6 +55,7 @@ app.get('/health', (_req, res) => {
     ok: true,
     demoMode,
     hasResendKey: Boolean(resendApiKey),
+    hasFirebaseAdmin: hasFirebaseAdmin(),
     emailTheme: 'branded-light-v2',
     emailSubject: 'Your CitiRide one-time password',
   });
@@ -200,8 +209,18 @@ app.post('/v1/otp/verify', async (req, res) => {
 
     otpStore.delete(key);
 
+    let welcomeEmail = 'skipped';
     if (purpose === 'login') {
-      void sendRiderWelcomeEmail(email);
+      welcomeEmail = await sendRiderWelcomeEmail(email);
+    }
+
+    let firebaseCustomToken = null;
+    try {
+      // Mint for login so the Flutter app can open a Firebase Auth session.
+      // Also mint for other purposes so a cold app can recover auth mid-flow.
+      firebaseCustomToken = await createRiderCustomToken(email);
+    } catch (tokenError) {
+      console.error('custom token failed', tokenError);
     }
 
     return res.json({
@@ -209,6 +228,8 @@ app.post('/v1/otp/verify', async (req, res) => {
       email,
       purpose,
       verified: true,
+      welcomeEmail,
+      ...(firebaseCustomToken ? { firebaseCustomToken } : {}),
     });
   } catch (error) {
     console.error('verify otp failed', error);
@@ -221,20 +242,26 @@ app.post('/v1/otp/verify', async (req, res) => {
 
 app.listen(port, () => {
   console.log(
-    `CitiRide OTP API listening on :${port} (demoMode=${demoMode}, hasResendKey=${Boolean(resendApiKey)})`,
+    `CitiRide OTP API listening on :${port} (demoMode=${demoMode}, hasResendKey=${Boolean(resendApiKey)}, hasFirebaseAdmin=${hasFirebaseAdmin()})`,
   );
 });
 
+/**
+ * @returns {Promise<'sent' | 'skipped' | 'failed'>}
+ */
 async function sendRiderWelcomeEmail(email) {
-  if (demoMode || !resend) {
-    return;
+  // Welcome mail needs Resend. Do not tie it to OTP demoMode — demoMode only
+  // controls whether the 6-digit code is emailed.
+  if (!resend) {
+    console.warn('welcome email skipped: Resend is not configured');
+    return 'skipped';
   }
 
-  if (welcomeSent.has(email)) {
-    return;
+  const lastSentAt = welcomeSentAt.get(email) || 0;
+  if (Date.now() - lastSentAt < welcomeCooldownMs) {
+    console.info('welcome email skipped: cooldown', email);
+    return 'skipped';
   }
-
-  welcomeSent.add(email);
 
   try {
     const { error } = await resend.emails.send({
@@ -246,12 +273,16 @@ async function sendRiderWelcomeEmail(email) {
     });
 
     if (error) {
-      welcomeSent.delete(email);
       console.error('welcome email failed', error);
+      return 'failed';
     }
+
+    welcomeSentAt.set(email, Date.now());
+    console.info('welcome email sent', email);
+    return 'sent';
   } catch (error) {
-    welcomeSent.delete(email);
     console.error('welcome email failed', error);
+    return 'failed';
   }
 }
 
