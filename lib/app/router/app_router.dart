@@ -34,6 +34,10 @@ import '../../features/wallet/presentation/wallet_sign_up_screen.dart';
 import '../../features/wallet/presentation/wallet_terms_screen.dart';
 import '../../features/wallet/presentation/wallet_verify_email_screen.dart';
 import '../../features/wallet/presentation/wallet_verify_phone_screen.dart';
+import '../../features/wallet/presentation/wallet_transaction_pin_screens.dart';
+import '../../features/wallet/presentation/wallet_withdraw_auth_screens.dart';
+import '../../features/wallet/presentation/wallet_withdraw_pin_screen.dart';
+import '../../features/wallet/presentation/wallet_withdraw_request.dart';
 import '../../features/wallet/presentation/wallet_withdraw_screen.dart';
 import '../../features/wallet/presentation/wallet_withdrawal_success_screen.dart';
 import '../../features/welcome/presentation/welcome_screen.dart';
@@ -281,6 +285,67 @@ abstract final class AppRouter {
                 ? state.extra! as WalletBank
                 : walletBanks.first;
             return WalletWithdrawScreen(initialBank: bank);
+          },
+        ),
+        GoRoute(
+          path: '/wallet-transaction-pin-setup',
+          name: 'wallet-transaction-pin-setup',
+          builder: (context, state) {
+            final pending = state.extra is WalletWithdrawRequest
+                ? state.extra! as WalletWithdrawRequest
+                : null;
+            return WalletTransactionPinScreen(
+              mode: WalletTransactionPinMode.setup,
+              pendingWithdraw: pending,
+            );
+          },
+        ),
+        GoRoute(
+          path: '/wallet-transaction-pin-confirm',
+          name: 'wallet-transaction-pin-confirm',
+          builder: (context, state) {
+            final pending = state.extra is WalletWithdrawRequest
+                ? state.extra! as WalletWithdrawRequest
+                : null;
+            return WalletTransactionPinScreen(
+              mode: WalletTransactionPinMode.confirm,
+              pendingWithdraw: pending,
+            );
+          },
+        ),
+        GoRoute(
+          path: '/wallet-withdraw-pin',
+          name: 'wallet-withdraw-pin',
+          builder: (context, state) {
+            final request = state.extra is WalletWithdrawRequest
+                ? state.extra! as WalletWithdrawRequest
+                : WalletWithdrawRequest(
+                    bank: walletBanks.first,
+                    accountNumber: '',
+                    amount: 0,
+                  );
+            return WalletWithdrawPinScreen(request: request);
+          },
+        ),
+        GoRoute(
+          path: '/wallet-withdraw-otp',
+          name: 'wallet-withdraw-otp',
+          builder: (context, state) {
+            final extra = state.extra;
+            WalletWithdrawRequest request = WalletWithdrawRequest(
+              bank: walletBanks.first,
+              accountNumber: '',
+              amount: 0,
+            );
+            var email = '';
+            if (extra is Map) {
+              final mappedRequest = extra['request'];
+              if (mappedRequest is WalletWithdrawRequest) {
+                request = mappedRequest;
+              }
+              email = (extra['email'] as String?)?.trim() ?? '';
+            }
+            return WalletWithdrawOtpScreen(request: request, email: email);
           },
         ),
         GoRoute(

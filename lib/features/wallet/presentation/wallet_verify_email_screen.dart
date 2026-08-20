@@ -23,14 +23,47 @@ class WalletVerifyEmailScreen extends StatefulWidget {
 
 class _WalletVerifyEmailScreenState extends State<WalletVerifyEmailScreen> {
   static const _codeLength = 6;
+  static const _resendStartSeconds = 30;
 
   String _code = '';
+  int _resendSeconds = _resendStartSeconds;
+  Timer? _resendTimer;
   bool _showIncorrectError = false;
   bool _isSubmitting = false;
 
   bool get _isComplete => _code.length == _codeLength;
 
   bool get _canConfirm => _isComplete && !_isSubmitting;
+
+  @override
+  void initState() {
+    super.initState();
+    _startResendCountdown();
+  }
+
+  @override
+  void dispose() {
+    _resendTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startResendCountdown() {
+    _resendTimer?.cancel();
+    _resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      if (_resendSeconds <= 1) {
+        setState(() => _resendSeconds = 0);
+        timer.cancel();
+        return;
+      }
+
+      setState(() => _resendSeconds -= 1);
+    });
+  }
 
   void _goBack() {
     if (context.canPop()) {
@@ -64,7 +97,7 @@ class _WalletVerifyEmailScreenState extends State<WalletVerifyEmailScreen> {
   }
 
   Future<void> _resendCode() async {
-    if (_isSubmitting) {
+    if (_isSubmitting || _resendSeconds > 0) {
       return;
     }
 
@@ -83,6 +116,11 @@ class _WalletVerifyEmailScreenState extends State<WalletVerifyEmailScreen> {
         email: widget.email,
         purpose: CitirideOtpPurpose.wallet,
       );
+      if (!mounted) {
+        return;
+      }
+      setState(() => _resendSeconds = _resendStartSeconds);
+      _startResendCountdown();
     } on CitirideAuthException catch (error) {
       if (!mounted) {
         return;
@@ -281,18 +319,21 @@ class _WalletVerifyEmailScreenState extends State<WalletVerifyEmailScreen> {
                           ),
                         ),
                         TextButton(
-                          onPressed: _isSubmitting
+                          onPressed: (_isSubmitting || _resendSeconds > 0)
                               ? null
                               : () => unawaited(_resendCode()),
                           style: TextButton.styleFrom(
                             foregroundColor: AppColors.citirideYellow,
+                            disabledForegroundColor: const Color(0xFF6B6B6B),
                             padding: EdgeInsets.zero,
                             minimumSize: const Size(0, 32),
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
-                          child: const Text(
-                            'Resend',
-                            style: TextStyle(
+                          child: Text(
+                            _resendSeconds > 0
+                                ? 'Resend in $_resendSeconds'
+                                : 'Resend',
+                            style: const TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w700,
                               letterSpacing: 0,

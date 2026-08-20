@@ -42,7 +42,10 @@ abstract final class GoogleMapsConfig {
     return key != null && key.isNotEmpty && !key.contains('YOUR_');
   }
 
+  /// Launch market. Expand [supportedRegionCodes] when entering new countries.
+  /// Places autocomplete currently restricts suggestions to these ISO codes.
   static const countryCode = 'NG';
+  static const supportedRegionCodes = <String>['NG'];
   static const defaultCenter = LatLng(6.3350, 5.6037);
   static const defaultZoom = 14.8;
 }

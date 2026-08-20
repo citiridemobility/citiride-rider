@@ -9,6 +9,7 @@ import '../../../app/theme/app_colors.dart';
 import '../../../core/auth/citiride_auth_service.dart';
 import '../../../core/auth/citiride_otp_client.dart';
 import '../../../core/session/citiride_session_store.dart';
+import '../../profile/domain/rider_profile.dart';
 import 'widgets/auth_number_pad.dart';
 
 class EnterCodeScreen extends StatefulWidget {
@@ -39,7 +40,7 @@ enum _CodeResult { idle, correct, incorrect }
 
 class _EnterCodeScreenState extends State<EnterCodeScreen> {
   static const _codeLength = 6;
-  static const _resendStartSeconds = 11;
+  static const _resendStartSeconds = 30;
   static const _successDelay = Duration(seconds: 2);
   static const _verificationTimeout = Duration(seconds: 45);
 
@@ -163,10 +164,21 @@ class _EnterCodeScreenState extends State<EnterCodeScreen> {
       return;
     }
 
-    await _sessionStore.markAuthenticated().timeout(
-      const Duration(seconds: 2),
-      onTimeout: () {},
-    );
+    await _sessionStore
+        .markAuthenticated(
+          email: _isEmailAuth ? _emailAddress : null,
+        )
+        .timeout(
+          const Duration(seconds: 2),
+          onTimeout: () {},
+        );
+
+    if (_isEmailAuth) {
+      final profile = RiderProfileStore.instance.profile.value;
+      await RiderProfileStore.instance
+          .update(profile.copyWith(email: _emailAddress))
+          .timeout(const Duration(seconds: 2), onTimeout: () {});
+    }
 
     setState(() {
       _result = _CodeResult.correct;
@@ -518,7 +530,7 @@ class _EnterCodeHeader extends StatelessWidget {
               const SizedBox(height: 10),
               Text(
                 authMethod == CitirideAuthMethod.email
-                    ? 'A verification code was sent to your email'
+                    ? 'A one-time password was sent to your email'
                     : 'A verification code was sent to your Whatsapp',
                 textAlign: TextAlign.center,
                 style: const TextStyle(

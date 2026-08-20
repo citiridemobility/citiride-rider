@@ -28,8 +28,11 @@ class _RideSuccessScreenState extends State<RideSuccessScreen> {
     'Respectful',
   ];
 
+  static const _tipOptions = <int>[0, 200, 500, 1000];
+
   int _rating = 0;
   String? _selectedComment;
+  int? _selectedTip;
 
   bool get _canSubmit => _rating > 0 && _selectedComment != null;
 
@@ -174,6 +177,14 @@ class _RideSuccessScreenState extends State<RideSuccessScreen> {
                                   ),
                           ),
                           const Spacer(),
+                          _TipOptionsRow(
+                            options: _tipOptions,
+                            selectedTip: _selectedTip,
+                            onSelected: (tip) {
+                              setState(() => _selectedTip = tip);
+                            },
+                          ),
+                          const SizedBox(height: 16),
                           _SuggestedCommentPills(
                             comments: _suggestedComments,
                             selectedComment: _selectedComment,
@@ -609,6 +620,94 @@ class _RideRatingSelector extends StatelessWidget {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TipOptionsRow extends StatelessWidget {
+  const _TipOptionsRow({
+    required this.options,
+    required this.selectedTip,
+    required this.onSelected,
+  });
+
+  final List<int> options;
+  final int? selectedTip;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 28),
+      child: Column(
+        children: [
+          const Text(
+            'Add a tip for your driver?',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Color(0xFF8F8F8F),
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              letterSpacing: 0,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              for (final tip in options)
+                _TipChip(
+                  label: tip == 0 ? 'No tip' : '\u20A6$tip',
+                  isSelected: selectedTip == tip,
+                  onTap: () => onSelected(tip),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TipChip extends StatelessWidget {
+  const _TipChip({
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.citirideYellow : const Color(0xFF242424),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected
+                ? AppColors.citirideYellow
+                : const Color(0xFF3A3A3A),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? AppColors.citirideBlack : AppColors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0,
+          ),
         ),
       ),
     );

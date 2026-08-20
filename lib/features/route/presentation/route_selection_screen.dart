@@ -779,10 +779,13 @@ class _RouteInputArea extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cardHeight = showStopField ? 144.0 : 96.0;
-    const switchTop = 47.0;
+    const switchTop = 24.0;
+    // Keep Add Stop below the fields card so it doesn't crowd the location row.
+    const addStopTopGap = 10.0;
+    final totalHeight = cardHeight + addStopTopGap + 36.0;
 
     return SizedBox(
-      height: cardHeight,
+      height: totalHeight,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -804,20 +807,23 @@ class _RouteInputArea extends StatelessWidget {
           ),
           Positioned(
             right: 0,
-            top: 0,
-            child: _RouteActionIconButton(
-              asset: 'assets/images/add stop_icon.svg',
-              semanticsLabel: 'Add stop',
-              onTap: onAddStop,
-            ),
-          ),
-          Positioned(
-            right: 0,
             top: switchTop,
             child: _RouteActionIconButton(
               asset: 'assets/images/switch route_icon.svg',
               semanticsLabel: 'Switch route',
               onTap: onSwitchRoute,
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            top: cardHeight + addStopTopGap,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: _AddStopTextButton(
+                isStopVisible: showStopField,
+                onTap: onAddStop,
+              ),
             ),
           ),
         ],
@@ -1052,6 +1058,54 @@ class _RouteActionIconButton extends StatelessWidget {
           asset,
           fit: BoxFit.contain,
           semanticsLabel: semanticsLabel,
+        ),
+      ),
+    );
+  }
+}
+
+class _AddStopTextButton extends StatelessWidget {
+  const _AddStopTextButton({
+    required this.isStopVisible,
+    required this.onTap,
+  });
+
+  final bool isStopVisible;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = isStopVisible ? 'Remove stop' : 'Add stop';
+
+    return Semantics(
+      button: true,
+      label: label,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isStopVisible ? Icons.remove : Icons.add,
+                size: 18,
+                color: AppColors.citirideYellow,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: AppColors.citirideYellow,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  height: 1.2,
+                  letterSpacing: 0,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

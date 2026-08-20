@@ -1,11 +1,10 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'citiride_auth_service.dart';
 
-enum CitirideOtpPurpose { login, wallet, resetPin }
+enum CitirideOtpPurpose { login, wallet, resetPin, withdraw }
 
 class CitirideOtpClient {
   CitirideOtpClient({http.Client? client, String? baseUrl})
@@ -32,20 +31,10 @@ class CitirideOtpClient {
       return configured.replaceAll(RegExp(r'/+$'), '');
     }
 
-    // Release / profile builds always use the hosted API.
-    if (kReleaseMode || kProfileMode) {
-      return productionBaseUrl;
-    }
-
-    // Debug builds stay on the local OTP API for faster iteration.
-    if (kIsWeb) {
-      return 'http://127.0.0.1:8787';
-    }
-
-    return switch (defaultTargetPlatform) {
-      TargetPlatform.android => 'http://10.0.2.2:8787',
-      _ => 'http://127.0.0.1:8787',
-    };
+    // Default to the hosted API so debug/web runs don't hit a stale local
+    // otp-api process and send the old plain email template.
+    // Override with: --dart-define=CITIRIDE_OTP_API_URL=http://127.0.0.1:8787
+    return productionBaseUrl;
   }
 
   Future<CitirideOtpSendResult> sendOtp({
@@ -143,6 +132,7 @@ class CitirideOtpClient {
       CitirideOtpPurpose.login => 'login',
       CitirideOtpPurpose.wallet => 'wallet',
       CitirideOtpPurpose.resetPin => 'reset_pin',
+      CitirideOtpPurpose.withdraw => 'withdraw',
     };
   }
 }

@@ -457,7 +457,7 @@ class _EnterNumberHeader extends StatelessWidget {
               const SizedBox(height: 10),
               Text(
                 _isEmailAuth
-                    ? 'We\'ll send you a verification code to your\nemail address'
+                    ? 'We\'ll send you a one-time password to your\nemail address'
                     : 'We\'ll send you a verification code on your\nWhatsapp',
                 textAlign: TextAlign.center,
                 style: const TextStyle(

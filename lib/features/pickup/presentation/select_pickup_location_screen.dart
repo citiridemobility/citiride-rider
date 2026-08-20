@@ -53,6 +53,9 @@ class _SelectPickupLocationScreenState
   LatLng? _currentLatLng;
   LatLng? _mapPickupCandidate;
   bool _isMovingPickupFromMap = false;
+  /// After the rider pans the map, keep the camera still so the center pin
+  /// stays over the place they chose (don't snap back via route fitBounds).
+  bool _holdCameraOnUserPickup = false;
   CitirideRoute? _route;
   bool _isLoadingRoute = false;
   int _routeLoadGeneration = 0;
@@ -178,12 +181,36 @@ class _SelectPickupLocationScreenState
     context.push(routeUri.toString());
   }
 
-  void _selectPickupPlace(CitiridePlace place) {
+  void _selectPickupPlace(CitiridePlace place, {bool holdCamera = false}) {
     setState(() {
       _pickupLocation = place.displayText;
       _pickupLatLng = place.location ?? _pickupLatLng;
+      if (holdCamera) {
+        _holdCameraOnUserPickup = true;
+      }
     });
     _loadRoute();
+  }
+
+  Future<void> _setPickupFromMap(LatLng location) async {
+    final label = await _placesService
+        .reverseGeocodeLabel(location)
+        .timeout(const Duration(seconds: 5), onTimeout: () => null);
+
+    if (!mounted) {
+      return;
+    }
+
+    _selectPickupPlace(
+      CitiridePlace(
+        title: label?.trim().isNotEmpty == true ? label!.trim() : 'Dropped pin',
+        subtitle: label?.trim().isNotEmpty == true
+            ? 'Pinned pickup point'
+            : 'Move the map to refine pickup',
+        location: location,
+      ),
+      holdCamera: true,
+    );
   }
 
   Future<void> _useCurrentLocation() async {
@@ -199,6 +226,7 @@ class _SelectPickupLocationScreenState
       return;
     }
 
+    setState(() => _holdCameraOnUserPickup = false);
     _selectPickupPlace(
       CitiridePlace(
         title: 'Current Location',
@@ -210,8 +238,11 @@ class _SelectPickupLocationScreenState
   }
 
   void _beginPickupMapMove() {
-    _isMovingPickupFromMap = true;
-    _mapPickupCandidate = null;
+    setState(() {
+      _isMovingPickupFromMap = true;
+      _holdCameraOnUserPickup = true;
+      _mapPickupCandidate = null;
+    });
   }
 
   void _handlePickupCameraMove(CameraPosition position) {
@@ -233,26 +264,6 @@ class _SelectPickupLocationScreenState
     if (location != null) {
       unawaited(_setPickupFromMap(location));
     }
-  }
-
-  Future<void> _setPickupFromMap(LatLng location) async {
-    final label = await _placesService
-        .reverseGeocodeLabel(location)
-        .timeout(const Duration(seconds: 5), onTimeout: () => null);
-
-    if (!mounted) {
-      return;
-    }
-
-    _selectPickupPlace(
-      CitiridePlace(
-        title: label?.trim().isNotEmpty == true ? label!.trim() : 'Dropped pin',
-        subtitle: label?.trim().isNotEmpty == true
-            ? 'Pinned pickup point'
-            : 'Move the map to refine pickup',
-        location: location,
-      ),
-    );
   }
 
   void _confirmOrder() {
@@ -288,6 +299,7 @@ class _SelectPickupLocationScreenState
       return;
     }
 
+    setState(() => _holdCameraOnUserPickup = false);
     _selectPickupPlace(selectedLocation);
   }
 
@@ -319,6 +331,7 @@ class _SelectPickupLocationScreenState
                   child: _PickupMap(
                     route: _route,
                     isLoadingRoute: _isLoadingRoute,
+                    fitRouteInView: !_holdCameraOnUserPickup,
                     onMapTap: (location) =>
                         unawaited(_setPickupFromMap(location)),
                     onMapGestureStart: _beginPickupMapMove,
@@ -369,6 +382,7 @@ class _PickupMap extends StatelessWidget {
   const _PickupMap({
     required this.route,
     required this.isLoadingRoute,
+    this.fitRouteInView = true,
     this.onMapTap,
     this.onMapGestureStart,
     this.onCameraMove,
@@ -377,6 +391,7 @@ class _PickupMap extends StatelessWidget {
 
   final CitirideRoute? route;
   final bool isLoadingRoute;
+  final bool fitRouteInView;
   final ValueChanged<LatLng>? onMapTap;
   final VoidCallback? onMapGestureStart;
   final ValueChanged<CameraPosition>? onCameraMove;
@@ -393,6 +408,7 @@ class _PickupMap extends StatelessWidget {
           child: CitirideLiveRouteMap(
             route: route,
             showPickupMarker: false,
+            fitRouteInView: fitRouteInView,
             fallbackSemanticsLabel: 'Pickup map background',
             routeSemanticsLabel: 'Pickup route direction',
             onMapTap: onMapTap,

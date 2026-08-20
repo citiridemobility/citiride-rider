@@ -26,6 +26,26 @@ class RiderProfile {
     return 'Rider';
   }
 
+  /// First token of [fullName], used for greetings like "Good morning, James".
+  String get firstName {
+    final name = fullName.trim();
+    if (name.isEmpty) {
+      return 'Rider';
+    }
+    return name.split(RegExp(r'\s+')).first;
+  }
+
+  static String timeOfDayGreeting([DateTime? now]) {
+    final hour = (now ?? DateTime.now()).hour;
+    if (hour < 12) {
+      return 'Good morning';
+    }
+    if (hour < 17) {
+      return 'Good afternoon';
+    }
+    return 'Good evening';
+  }
+
   String get displayUserName {
     final name = userName.trim().replaceFirst(RegExp(r'^@+'), '');
     if (name.isNotEmpty) {

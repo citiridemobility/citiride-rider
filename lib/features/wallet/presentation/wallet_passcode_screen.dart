@@ -132,7 +132,10 @@ class _WalletPasscodeScreenState extends State<WalletPasscodeScreen> {
           _visualState = _PasscodeVisualState.matched;
           _isSubmitting = true;
         });
-        await Future<void>.delayed(const Duration(milliseconds: 450));
+        await showWalletTimedLoadingDialog(
+          context,
+          message: 'Setting up your wallet',
+        );
         if (!mounted) {
           return;
         }
@@ -144,7 +147,7 @@ class _WalletPasscodeScreenState extends State<WalletPasscodeScreen> {
         return;
 
       case WalletPasscodeMode.unlock:
-        if (!WalletEnrollmentStore.instance.verifyPasscode(code)) {
+        if (!await WalletEnrollmentStore.instance.verifyPasscode(code)) {
           setState(() {
             _visualState = _PasscodeVisualState.mismatch;
           });

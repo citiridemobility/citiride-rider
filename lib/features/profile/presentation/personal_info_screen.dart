@@ -120,7 +120,7 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
 
     final previousProfile = RiderProfileStore.instance.profile.value;
     await RiderProfileStore.instance.update(
-      RiderProfile(
+      previousProfile.copyWith(
         fullName: _nameController.text.trim(),
         userName: _cleanUserName(_userNameController.text),
         phoneNumber: _formatPhoneNumber(_phoneController.text),

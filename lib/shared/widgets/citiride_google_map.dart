@@ -282,12 +282,38 @@ Polyline citirideRoutePolyline(List<LatLng> points) {
     polylineId: const PolylineId('citiride-route'),
     points: points,
     color: AppColors.citirideYellow,
-    width: kIsWeb ? 4 : 5,
-    geodesic: false,
+    width: kIsWeb ? 5 : 7,
+    geodesic: true,
     jointType: JointType.round,
     startCap: Cap.roundCap,
     endCap: Cap.roundCap,
+    zIndex: 1,
   );
+}
+
+/// Soft underlay that makes the yellow route read cleaner on dark basemaps.
+Polyline citirideRoutePolylineOutline(List<LatLng> points) {
+  return Polyline(
+    polylineId: const PolylineId('citiride-route-outline'),
+    points: points,
+    color: const Color(0xE6000000),
+    width: kIsWeb ? 9 : 12,
+    geodesic: true,
+    jointType: JointType.round,
+    startCap: Cap.roundCap,
+    endCap: Cap.roundCap,
+    zIndex: 0,
+  );
+}
+
+Set<Polyline> citirideRoutePolylines(List<LatLng> points) {
+  if (points.length < 2) {
+    return const <Polyline>{};
+  }
+  return <Polyline>{
+    citirideRoutePolylineOutline(points),
+    citirideRoutePolyline(points),
+  };
 }
 
 const _darkMapStyle = '''

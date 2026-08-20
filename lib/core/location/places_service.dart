@@ -69,7 +69,9 @@ class CitiridePlacesService {
     final body = <String, Object?>{
       'input': query,
       'sessionToken': _sessionToken,
-      'includedRegionCodes': [GoogleMapsConfig.countryCode.toLowerCase()],
+      'includedRegionCodes': GoogleMapsConfig.supportedRegionCodes
+          .map((code) => code.toLowerCase())
+          .toList(),
       if (locationBias != null)
         'locationBias': {
           'circle': {

@@ -11,6 +11,7 @@ import '../../../core/location/citiride_route_service.dart';
 import '../../../core/location/route_query.dart';
 import '../../../shared/widgets/citiride_live_route_map.dart';
 import '../../../shared/widgets/compatible_svg_picture.dart';
+import '../../wallet/presentation/wallet_enrollment_store.dart';
 
 enum _RideOption { regular, vip }
 
@@ -52,7 +53,8 @@ class _PaymentOptionsScreenState extends State<PaymentOptionsScreen> {
     _selectedRide = widget.initialRide == 'vip'
         ? _RideOption.vip
         : _RideOption.regular;
-    _selectedPayment = widget.initialPayment == 'wallet'
+    _selectedPayment = widget.initialPayment == 'wallet' &&
+            WalletEnrollmentStore.instance.isEnrolled
         ? _PaymentMethod.wallet
         : _PaymentMethod.cash;
     _loadRoute();
@@ -108,9 +110,18 @@ class _PaymentOptionsScreenState extends State<PaymentOptionsScreen> {
   }
 
   void _selectPayment(_PaymentMethod payment) {
+    if (payment == _PaymentMethod.wallet &&
+        !WalletEnrollmentStore.instance.isEnrolled) {
+      return;
+    }
+
     setState(() {
       _selectedPayment = payment;
     });
+  }
+
+  void _activateWallet() {
+    context.push('/wallet-sign-up');
   }
 
   void _returnToSelectRide() {
@@ -191,8 +202,10 @@ class _PaymentOptionsScreenState extends State<PaymentOptionsScreen> {
                   child: _PaymentOptionsPanel(
                     selectedRide: _selectedRide,
                     selectedPayment: _selectedPayment,
+                    walletEnrolled: WalletEnrollmentStore.instance.isEnrolled,
                     onRideSelected: _selectRide,
                     onPaymentSelected: _selectPayment,
+                    onActivateWallet: _activateWallet,
                     onContinue: _returnToSelectRide,
                     route: _route,
                     isLoadingRoute: _isLoadingRoute,
@@ -460,8 +473,10 @@ class _PaymentOptionsPanel extends StatelessWidget {
   const _PaymentOptionsPanel({
     required this.selectedRide,
     required this.selectedPayment,
+    required this.walletEnrolled,
     required this.onRideSelected,
     required this.onPaymentSelected,
+    required this.onActivateWallet,
     required this.onContinue,
     required this.route,
     required this.isLoadingRoute,
@@ -469,8 +484,10 @@ class _PaymentOptionsPanel extends StatelessWidget {
 
   final _RideOption selectedRide;
   final _PaymentMethod selectedPayment;
+  final bool walletEnrolled;
   final ValueChanged<_RideOption> onRideSelected;
   final ValueChanged<_PaymentMethod> onPaymentSelected;
+  final VoidCallback onActivateWallet;
   final VoidCallback onContinue;
   final CitirideRoute? route;
   final bool isLoadingRoute;
@@ -556,15 +573,26 @@ class _PaymentOptionsPanel extends StatelessWidget {
             onTap: () => onPaymentSelected(_PaymentMethod.cash),
           ),
           const SizedBox(height: 19),
-          _PaymentMethodRow(
-            key: const ValueKey('payment-method-wallet'),
-            iconAsset: 'assets/images/wallet icon.svg',
-            title: 'CitiRide Wallet',
-            subtitle: 'Bal: \u20A63,000',
-            isSelected: selectedPayment == _PaymentMethod.wallet,
-            showTopUp: true,
-            onTap: () => onPaymentSelected(_PaymentMethod.wallet),
-          ),
+          if (walletEnrolled)
+            _PaymentMethodRow(
+              key: const ValueKey('payment-method-wallet'),
+              iconAsset: 'assets/images/wallet icon.svg',
+              title: 'CitiRide Wallet',
+              subtitle: 'Bal: \u20A63,000',
+              isSelected: selectedPayment == _PaymentMethod.wallet,
+              showTopUp: true,
+              onTap: () => onPaymentSelected(_PaymentMethod.wallet),
+            )
+          else
+            _PaymentMethodRow(
+              key: const ValueKey('payment-method-activate-wallet'),
+              iconAsset: 'assets/images/wallet icon.svg',
+              title: 'Activate wallet',
+              subtitle: 'Optional • Set up CitiRide Wallet',
+              isSelected: false,
+              actionLabel: 'Activate',
+              onTap: onActivateWallet,
+            ),
           const Spacer(),
           _PaymentContinueButton(onPressed: onContinue),
         ],
@@ -788,6 +816,7 @@ class _PaymentMethodRow extends StatelessWidget {
     required this.isSelected,
     required this.onTap,
     this.showTopUp = false,
+    this.actionLabel,
   });
 
   final String iconAsset;
@@ -795,6 +824,7 @@ class _PaymentMethodRow extends StatelessWidget {
   final String subtitle;
   final bool isSelected;
   final bool showTopUp;
+  final String? actionLabel;
   final VoidCallback onTap;
 
   @override
@@ -831,17 +861,19 @@ class _PaymentMethodRow extends StatelessWidget {
                 const SizedBox(height: 5),
                 Row(
                   children: [
-                    Text(
-                      subtitle,
-                      style: const TextStyle(
-                        color: Color(0xFF8F8F8F),
-                        fontSize: 10,
-                        fontWeight: FontWeight.w400,
-                        height: 1.2,
-                        letterSpacing: 0,
+                    Flexible(
+                      child: Text(
+                        subtitle,
+                        style: const TextStyle(
+                          color: Color(0xFF8F8F8F),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w400,
+                          height: 1.2,
+                          letterSpacing: 0,
+                        ),
                       ),
                     ),
-                    if (showTopUp) ...[
+                    if (showTopUp || actionLabel != null) ...[
                       const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -852,9 +884,9 @@ class _PaymentMethodRow extends StatelessWidget {
                           color: AppColors.citirideYellow,
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Text(
-                          'Top up wallet',
-                          style: TextStyle(
+                        child: Text(
+                          actionLabel ?? 'Top up wallet',
+                          style: const TextStyle(
                             color: AppColors.citirideBlack,
                             fontSize: 8,
                             fontWeight: FontWeight.w600,
@@ -869,7 +901,14 @@ class _PaymentMethodRow extends StatelessWidget {
               ],
             ),
           ),
-          _PaymentRadio(isSelected: isSelected),
+          if (actionLabel == null)
+            _PaymentRadio(isSelected: isSelected)
+          else
+            const Icon(
+              Icons.chevron_right,
+              color: Color(0xFF8F8F8F),
+              size: 20,
+            ),
         ],
       ),
     );

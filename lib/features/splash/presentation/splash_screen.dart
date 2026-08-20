@@ -10,6 +10,7 @@ import '../../../core/session/citiride_session_store.dart';
 import '../../../shared/widgets/compatible_svg_picture.dart';
 import '../../profile/domain/rider_profile.dart';
 import '../../wallet/presentation/wallet_enrollment_store.dart';
+import '../../wallet/presentation/wallet_transaction_pin_store.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -39,6 +40,10 @@ class _SplashScreenState extends State<SplashScreen> {
         onTimeout: () {},
       ),
       WalletEnrollmentStore.instance.load().timeout(
+        const Duration(seconds: 2),
+        onTimeout: () {},
+      ),
+      WalletTransactionPinStore.instance.load().timeout(
         const Duration(seconds: 2),
         onTimeout: () {},
       ),

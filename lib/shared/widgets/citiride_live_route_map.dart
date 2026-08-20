@@ -30,6 +30,7 @@ class CitirideLiveRouteMap extends StatefulWidget {
     this.vehicleMarkerWidth = 58,
     this.vehicleMarkerHeight = 34,
     this.cameraBoundsPadding = 104,
+    this.fitRouteInView = true,
     this.onMapTap,
     this.onCameraMove,
     this.onCameraIdle,
@@ -48,6 +49,9 @@ class CitirideLiveRouteMap extends StatefulWidget {
   final double vehicleMarkerWidth;
   final double vehicleMarkerHeight;
   final double cameraBoundsPadding;
+  /// When false, route updates do not re-fit/recenter the camera (used while
+  /// the rider is manually positioning pickup under the center pin).
+  final bool fitRouteInView;
   final ValueChanged<LatLng>? onMapTap;
   final ValueChanged<CameraPosition>? onCameraMove;
   final VoidCallback? onCameraIdle;
@@ -89,7 +93,8 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
     }
 
     if (widget.route != oldWidget.route ||
-        widget.cameraBoundsPadding != oldWidget.cameraBoundsPadding) {
+        widget.cameraBoundsPadding != oldWidget.cameraBoundsPadding ||
+        widget.fitRouteInView != oldWidget.fitRouteInView) {
       unawaited(_refreshOverlayPositions());
     }
   }
@@ -200,8 +205,8 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
                 destinationLabel: destinationLabel,
               ),
               fallbackSemanticsLabel: widget.fallbackSemanticsLabel,
-              cameraTarget: route?.center,
-              cameraBounds: route?.latLngBounds,
+              cameraTarget: widget.fitRouteInView ? route?.center : null,
+              cameraBounds: widget.fitRouteInView ? route?.latLngBounds : null,
               cameraBoundsPadding: widget.cameraBoundsPadding,
               onMapCreated: _handleMapCreated,
               markers: {
@@ -236,7 +241,7 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
               onCameraMove: _handleCameraMove,
               onCameraIdle: _handleCameraIdle,
               polylines: {
-                if (route != null) citirideRoutePolyline(route.points),
+                if (route != null) ...citirideRoutePolylines(route.points),
               },
             );
           },

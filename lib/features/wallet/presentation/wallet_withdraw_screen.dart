@@ -6,6 +6,8 @@ import '../../../app/theme/app_colors.dart';
 import 'wallet_banks.dart';
 import 'wallet_flow_widgets.dart';
 import 'wallet_select_bank_sheet.dart';
+import 'wallet_transaction_pin_store.dart';
+import 'wallet_withdraw_request.dart';
 
 class WalletWithdrawScreen extends StatefulWidget {
   const WalletWithdrawScreen({
@@ -118,19 +120,23 @@ class _WalletWithdrawScreenState extends State<WalletWithdrawScreen> {
       return;
     }
 
-    setState(() => _isSubmitting = true);
-
-    await showWalletTimedLoadingDialog(
-      context,
-      message: 'Withdrawing to bank',
-    );
-
-    if (!mounted) {
+    final amount = _parseAmount(_amountController.text);
+    if (amount == null) {
       return;
     }
 
-    setState(() => _isSubmitting = false);
-    context.go('/wallet-withdrawal-success');
+    final request = WalletWithdrawRequest(
+      bank: _selectedBank,
+      accountNumber: _accountController.text.trim(),
+      amount: amount,
+    );
+
+    if (!WalletTransactionPinStore.instance.hasPin) {
+      context.push('/wallet-transaction-pin-setup', extra: request);
+      return;
+    }
+
+    context.push('/wallet-withdraw-pin', extra: request);
   }
 
   @override

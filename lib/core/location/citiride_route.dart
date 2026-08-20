@@ -104,13 +104,16 @@ class CitirideRoute {
     }
 
     final distanceMeters = _distanceInMeters(origin, destination);
-    final curve = math.min(0.0028, math.max(0.00045, distanceMeters / 2200000));
+    // Gentle bend + denser samples keep the fallback line smooth instead of
+    // looking like a few jagged segments on the map.
+    final curve = math.min(0.0016, math.max(0.00025, distanceMeters / 3200000));
     final normalLat = -deltaLng / length;
     final normalLng = deltaLat / length;
+    final samples = math.max(24, math.min(48, (distanceMeters / 180).round()));
 
-    LatLng pointAt(double t, double bend) {
+    LatLng pointAt(double t) {
       final ease = t * t * (3 - (2 * t));
-      final arc = math.sin(t * math.pi) * curve * bend;
+      final arc = math.sin(t * math.pi) * curve;
       return LatLng(
         origin.latitude + (deltaLat * ease) + (normalLat * arc),
         origin.longitude + (deltaLng * ease) + (normalLng * arc),
@@ -119,9 +122,7 @@ class CitirideRoute {
 
     return [
       origin,
-      pointAt(0.24, 0.75),
-      pointAt(0.48, 1.0),
-      pointAt(0.72, 0.64),
+      for (var i = 1; i < samples; i++) pointAt(i / samples),
       destination,
     ];
   }

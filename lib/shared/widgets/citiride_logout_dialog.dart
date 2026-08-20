@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../app/theme/app_colors.dart';
 import '../../core/session/citiride_session_store.dart';
+import '../../features/wallet/presentation/wallet_enrollment_store.dart';
+import '../../features/wallet/presentation/wallet_transaction_pin_store.dart';
 
 Future<void> showCitirideLogoutDialog(BuildContext context) {
   return showGeneralDialog<void>(
@@ -31,6 +33,8 @@ Future<void> showCitirideLogoutDialog(BuildContext context) {
               onConfirm: () async {
                 Navigator.of(dialogContext).pop();
                 await const CitirideSessionStore().clearAuth();
+                await WalletEnrollmentStore.instance.clear();
+                await WalletTransactionPinStore.instance.clear();
                 if (context.mounted) {
                   context.go('/welcome');
                 }

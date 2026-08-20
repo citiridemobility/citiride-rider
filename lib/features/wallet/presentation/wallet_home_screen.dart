@@ -7,6 +7,7 @@ import '../../../shared/widgets/citiride_bottom_nav.dart';
 import '../../../shared/widgets/compatible_svg_picture.dart';
 import '../../profile/domain/rider_profile.dart';
 import 'wallet_select_bank_sheet.dart';
+import 'wallet_transaction_pin_store.dart';
 
 enum _WalletTxnFilter { all, completed, pending, reversed }
 
@@ -87,6 +88,13 @@ class _WalletHomeScreenState extends State<WalletHomeScreen> {
   }
 
   Future<void> _onWithdraw() async {
+    if (!WalletTransactionPinStore.instance.hasPin) {
+      final created = await context.push<bool>('/wallet-transaction-pin-setup');
+      if (!mounted || created != true) {
+        return;
+      }
+    }
+
     final bank = await showWalletSelectBankSheet(context);
     if (!mounted || bank == null) {
       return;
@@ -276,9 +284,9 @@ class _WalletHomeHeader extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Welcome,',
-                        style: TextStyle(
+                      Text(
+                        '${RiderProfile.timeOfDayGreeting()},',
+                        style: const TextStyle(
                           color: Color(0xFF8F8F8F),
                           fontSize: 13,
                           fontWeight: FontWeight.w400,
@@ -289,7 +297,7 @@ class _WalletHomeHeader extends StatelessWidget {
                       ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 180),
                         child: Text(
-                          profile.displayName,
+                          profile.firstName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(

@@ -5,7 +5,9 @@ class CitirideSessionStore {
 
   Future<bool> hasSeenOnboarding() async => false;
 
-  Future<void> markAuthenticated() async {}
+  Future<String?> signedInEmail() async => null;
+
+  Future<void> markAuthenticated({String? email}) async {}
 
   Future<void> markOnboardingSeen() async {}
 
