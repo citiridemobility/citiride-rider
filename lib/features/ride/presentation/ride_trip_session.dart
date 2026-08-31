@@ -161,8 +161,5 @@ void navigateForRideSnapshot({
 }
 
 Timestamp? readOptionalTimestamp(Object? value) {
-  if (value is Timestamp) {
-    return value;
-  }
-  return null;
+  return timestampFrom(value);
 }

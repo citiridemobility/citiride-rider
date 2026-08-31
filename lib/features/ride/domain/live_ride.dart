@@ -3,10 +3,39 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../core/location/citiride_fare.dart';
 import '../../../core/location/citiride_route.dart';
 
-/// Shared live-ride contract with the driver app (`firebase/types.ts`).
-///
-/// Firestore field names stay snake_case for status (`in_progress`, etc.).
-/// Timestamps use [FieldValue.serverTimestamp] on write and [Timestamp] on read.
+Map<String, dynamic>? asStringKeyedMap(Object? value) {
+  if (value is Map<String, dynamic>) {
+    return value;
+  }
+  if (value is Map) {
+    return {
+      for (final entry in value.entries) entry.key.toString(): entry.value,
+    };
+  }
+  return null;
+}
+
+Timestamp? timestampFrom(Object? value) {
+  if (value == null) {
+    return null;
+  }
+  if (value is Timestamp) {
+    return value;
+  }
+  if (value is DateTime) {
+    return Timestamp.fromDate(value);
+  }
+  if (value is num) {
+    final raw = value.toInt();
+    if (raw <= 0) {
+      return null;
+    }
+    // Driver writes Date.now() milliseconds; some paths use seconds.
+    final millis = raw < 1000000000000 ? raw * 1000 : raw;
+    return Timestamp.fromMillisecondsSinceEpoch(millis);
+  }
+  return null;
+}
 
 enum RideStatus {
   requested,
@@ -132,6 +161,7 @@ class LiveRide {
     this.paymentMethod = 'cash',
     this.createdAt,
     this.updatedAt,
+    this.lastDeclinedAt,
   });
 
   final String id;
@@ -146,6 +176,7 @@ class LiveRide {
   final String paymentMethod;
   final Timestamp? createdAt;
   final Timestamp? updatedAt;
+  final Timestamp? lastDeclinedAt;
 
   factory LiveRide.fromMap(String id, Map<String, dynamic> data) {
     final rawDriverLocation = data['driverLocation'];
@@ -155,14 +186,14 @@ class LiveRide {
       driverId: (data['driverId'] as String?)?.trim(),
       status: RideStatus.fromFirestore(data['status'] as String?),
       pickup: RideLatLng.fromMap(
-        data['pickup'] as Map<String, dynamic>?,
+        asStringKeyedMap(data['pickup']),
         fallback: 'Pickup',
       ),
       destination: RideLatLng.fromMap(
-        data['destination'] as Map<String, dynamic>?,
+        asStringKeyedMap(data['destination']),
         fallback: 'Destination',
       ),
-      fare: RideFare.fromMap(data['fare'] as Map<String, dynamic>?),
+      fare: RideFare.fromMap(asStringKeyedMap(data['fare'])),
       driverLocation: rawDriverLocation is Map
           ? DriverLocation.fromMap(rawDriverLocation)
           : null,
@@ -173,8 +204,9 @@ class LiveRide {
           (data['paymentMethod'] as String?)?.trim().isNotEmpty == true
           ? (data['paymentMethod'] as String).trim()
           : 'cash',
-      createdAt: data['createdAt'] as Timestamp?,
-      updatedAt: data['updatedAt'] as Timestamp?,
+      createdAt: timestampFrom(data['createdAt']),
+      updatedAt: timestampFrom(data['updatedAt']),
+      lastDeclinedAt: timestampFrom(data['lastDeclinedAt']),
     );
   }
 }
@@ -203,9 +235,7 @@ class DriverLocation {
           (data['longitude'] as num?)?.toDouble() ??
           0,
       heading: (data['heading'] as num?)?.toDouble() ?? 0,
-      updatedAt: data['updatedAt'] is Timestamp
-          ? data['updatedAt'] as Timestamp
-          : null,
+      updatedAt: timestampFrom(data['updatedAt']),
     );
   }
 }

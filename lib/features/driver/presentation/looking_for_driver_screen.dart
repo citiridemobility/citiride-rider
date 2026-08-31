@@ -118,6 +118,7 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
   StreamSubscription<LiveRide>? _rideSubscription;
   String? _rideId;
   String? _matchError;
+  String? _statusHint;
   bool _isCreatingRequest = true;
   bool _hasNavigatedToDriver = false;
   double? _estimatedFare;
@@ -239,16 +240,18 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
         return;
       }
 
-      setState(() {
-        _rideId = ride.id;
-        _isCreatingRequest = false;
-        _matchError = null;
-      });
+        setState(() {
+          _rideId = ride.id;
+          _isCreatingRequest = false;
+          _matchError = null;
+          _statusHint = null;
+        });
 
       await _rideSubscription?.cancel();
       _rideSubscription = _rideRepository.watchRide(ride.id).listen(
         _handleRideUpdate,
         onError: (Object error) {
+          debugPrint('Ride watch failed: $error');
           if (!mounted) {
             return;
           }
@@ -290,6 +293,14 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
         _estimatedFare = ride.fare.estimated;
       }
       _showDriverFound();
+      return;
+    }
+
+    if (ride.lastDeclinedAt != null) {
+      setState(() {
+        _matchError = null;
+        _statusHint = 'A driver declined. Looking for another nearby...';
+      });
     }
   }
 
@@ -476,6 +487,7 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
                     statusMessage: _isCreatingRequest
                         ? 'Sending your ride request...'
                         : (_matchError ??
+                              _statusHint ??
                               (_rideId == null
                                   ? 'Looking for a driver nearby'
                                   : 'Waiting for a nearby driver to accept')),

@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../../core/firebase/firestore_paths.dart';
 import '../domain/live_ride.dart';
@@ -58,7 +59,13 @@ class RideRepository {
       if (!snap.exists || data == null) {
         throw StateError('Ride $rideId was deleted.');
       }
-      return LiveRide.fromMap(snap.id, data);
+      try {
+        return LiveRide.fromMap(snap.id, data);
+      } on Object catch (error, stackTrace) {
+        debugPrint('Failed to parse ride $rideId: $error');
+        debugPrintStack(stackTrace: stackTrace);
+        rethrow;
+      }
     });
   }
 
