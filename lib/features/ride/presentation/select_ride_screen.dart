@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../../app/theme/app_colors.dart';
+import '../../../core/location/citiride_fare.dart';
 import '../../../core/location/citiride_route.dart';
 import '../../../core/location/citiride_route_service.dart';
 import '../../../core/location/route_query.dart';
@@ -543,8 +544,11 @@ class _RideSelectionPanel extends StatelessWidget {
                 route?.durationText ??
                 (isLoadingRoute ? 'Calculating' : 'Route pending'),
             seats: '4',
-            price: '\u20A63,500',
-            oldPrice: '\u20A64,500',
+            price: fareLabelForRoute(
+              tier: CitirideRideTier.regular,
+              route: route,
+              isLoadingRoute: isLoadingRoute,
+            ),
             carAsset: 'assets/images/Car img - select ride.svg',
             onTap: () => onRideSelected(_RideOption.regular),
           ),
@@ -559,8 +563,11 @@ class _RideSelectionPanel extends StatelessWidget {
                 _vipDurationText(route) ??
                 (isLoadingRoute ? 'Calculating' : 'Route pending'),
             seats: '2',
-            price: '\u20A67,500',
-            oldPrice: '\u20A69,500',
+            price: fareLabelForRoute(
+              tier: CitirideRideTier.vip,
+              route: route,
+              isLoadingRoute: isLoadingRoute,
+            ),
             carAsset: 'assets/images/car image - VIP.svg',
             onTap: () => onRideSelected(_RideOption.vip),
           ),
@@ -604,7 +611,6 @@ class _RideCard extends StatelessWidget {
     required this.time,
     required this.seats,
     required this.price,
-    required this.oldPrice,
     required this.carAsset,
     required this.onTap,
   });
@@ -616,7 +622,6 @@ class _RideCard extends StatelessWidget {
   final String time;
   final String seats;
   final String price;
-  final String oldPrice;
   final String carAsset;
   final VoidCallback onTap;
 
@@ -731,19 +736,6 @@ class _RideCard extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                       height: 1.15,
                       letterSpacing: 0,
-                    ),
-                  ),
-                  const SizedBox(height: 7),
-                  Text(
-                    oldPrice,
-                    style: const TextStyle(
-                      color: Color(0xFF8F8F8F),
-                      fontSize: 9,
-                      fontWeight: FontWeight.w400,
-                      height: 1,
-                      letterSpacing: 0,
-                      decoration: TextDecoration.lineThrough,
-                      decorationColor: Color(0xFF8F8F8F),
                     ),
                   ),
                 ],

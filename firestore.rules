@@ -1,0 +1,135 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function authUid() {
+      return request.auth.uid;
+    }
+
+    function isValidLatLng(data) {
+      return data.keys().hasAll(['lat', 'lng', 'address'])
+        && data.lat is number
+        && data.lng is number
+        && data.address is string;
+    }
+
+    function isValidFare(data) {
+      return data.keys().hasAll(['estimated'])
+        && data.estimated is number
+        && (!('final' in data) || data.final == null || data.final is number);
+    }
+
+    function isValidStatus(status) {
+      return status in [
+        'requested', 'accepted', 'arriving', 'waiting',
+        'in_progress', 'confirm_fare', 'completed', 'cancelled'
+      ];
+    }
+
+    function isValidDriverLocation(data) {
+      return data.keys().hasAll(['lat', 'lng', 'heading'])
+        && data.lat is number
+        && data.lng is number
+        && data.heading is number;
+    }
+
+    function isRideOwner() {
+      return isSignedIn() && resource.data.riderId == authUid();
+    }
+
+    function isAssignedDriver() {
+      return isSignedIn()
+        && resource.data.driverId is string
+        && resource.data.driverId == authUid();
+    }
+
+    match /rides/{rideId} {
+      // Open requests must stay readable so drivers can discover them.
+      // Tighten to geo-queries / Cloud Functions once driver Auth is live.
+      allow read: if true;
+
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasAll([
+          'riderId', 'status', 'pickup', 'destination', 'fare', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.riderId == authUid()
+        && request.resource.data.status == 'requested'
+        && (request.resource.data.driverId == null || !('driverId' in request.resource.data))
+        && isValidLatLng(request.resource.data.pickup)
+        && isValidLatLng(request.resource.data.destination)
+        && isValidFare(request.resource.data.fare);
+
+      allow update: if isValidStatus(request.resource.data.status)
+        && request.resource.data.riderId == resource.data.riderId
+        && (
+          // Rider cancels their own request
+          (isRideOwner()
+            && request.resource.data.status == 'cancelled'
+            && resource.data.status in ['requested', 'accepted', 'arriving', 'waiting'])
+          // Driver accepts an open or offered request
+          || (isSignedIn()
+            && resource.data.status == 'requested'
+            && request.resource.data.status in ['accepted', 'arriving']
+            && request.resource.data.driverId == authUid()
+            && (resource.data.driverId == null
+                || resource.data.driverId == authUid()))
+          // Driver declines an open or offered request
+          || (isSignedIn()
+            && resource.data.status == 'requested'
+            && request.resource.data.status == 'requested'
+            && request.resource.data.driverId == null
+            && (resource.data.driverId == null
+                || resource.data.driverId == authUid())
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly([
+                  'driverId',
+                  'excludedDriverIds',
+                  'lastDeclinedAt',
+                  'lastDeclinedBy',
+                  'updatedAt'
+                ]))
+          // Assigned driver progresses the trip
+          || (isAssignedDriver()
+            && request.resource.data.driverId == resource.data.driverId
+            && request.resource.data.status in [
+              'arriving', 'waiting', 'in_progress', 'confirm_fare', 'completed', 'cancelled'
+            ])
+          // Assigned driver refreshes live location on the ride doc
+          || (isAssignedDriver()
+            && request.resource.data.driverId == resource.data.driverId
+            && request.resource.data.status == resource.data.status
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['driverLocation', 'updatedAt']))
+        );
+
+      allow delete: if false;
+    }
+
+    match /driverLocations/{driverId} {
+      allow read: if true;
+      allow write: if isSignedIn()
+        && authUid() == driverId
+        && isValidDriverLocation(request.resource.data);
+    }
+
+    match /riders/{riderId} {
+      allow read: if isSignedIn() && authUid() == riderId;
+      allow create, update: if isSignedIn()
+        && authUid() == riderId
+        && request.resource.data.keys().hasAny(['email', 'authProvider', 'updatedAt', 'riderId']);
+      allow delete: if false;
+    }
+
+    match /drivers/{driverId} {
+      allow read: if true;
+      allow write: if isSignedIn() && authUid() == driverId;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

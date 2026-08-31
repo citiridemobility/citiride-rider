@@ -26,6 +26,8 @@ class CitirideLiveRouteMap extends StatefulWidget {
     this.pickupLabelBuilder,
     this.destinationLabelBuilder,
     this.vehicleProgress,
+    this.vehiclePosition,
+    this.vehicleHeading,
     this.vehicleMarkerAsset = 'assets/images/Car img - select ride.svg',
     this.vehicleMarkerWidth = 58,
     this.vehicleMarkerHeight = 34,
@@ -45,6 +47,9 @@ class CitirideLiveRouteMap extends StatefulWidget {
   final String Function(CitirideRoute route)? pickupLabelBuilder;
   final String Function(CitirideRoute route)? destinationLabelBuilder;
   final double? vehicleProgress;
+  /// Absolute GPS for the assigned driver (preferred over [vehicleProgress]).
+  final LatLng? vehiclePosition;
+  final double? vehicleHeading;
   final String vehicleMarkerAsset;
   final double vehicleMarkerWidth;
   final double vehicleMarkerHeight;
@@ -86,6 +91,8 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
         widget.showCars != oldWidget.showCars ||
         widget.showPickupPulse != oldWidget.showPickupPulse ||
         widget.vehicleProgress != oldWidget.vehicleProgress ||
+        widget.vehiclePosition != oldWidget.vehiclePosition ||
+        widget.vehicleHeading != oldWidget.vehicleHeading ||
         widget.vehicleMarkerAsset != oldWidget.vehicleMarkerAsset ||
         widget.vehicleMarkerWidth != oldWidget.vehicleMarkerWidth ||
         widget.vehicleMarkerHeight != oldWidget.vehicleMarkerHeight) {
@@ -115,7 +122,10 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
 
   void _loadMarkerIcons() {
     final route = widget.route;
-    if (route == null && !widget.showCars && widget.vehicleProgress == null) {
+    if (route == null &&
+        !widget.showCars &&
+        widget.vehicleProgress == null &&
+        widget.vehiclePosition == null) {
       _markerIcons = null;
       return;
     }
@@ -210,6 +220,16 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
               cameraBoundsPadding: widget.cameraBoundsPadding,
               onMapCreated: _handleMapCreated,
               markers: {
+                if (icons != null && widget.vehiclePosition != null)
+                  Marker(
+                    markerId: const MarkerId('citiride-route-vehicle'),
+                    position: widget.vehiclePosition!,
+                    icon: icons.vehicle,
+                    anchor: const Offset(0.5, 0.5),
+                    flat: true,
+                    rotation: widget.vehicleHeading ?? 0,
+                    zIndexInt: 5,
+                  ),
                 if (route != null && icons != null) ...{
                   // Small pin under destination label (labels are Flutter overlays).
                   Marker(
@@ -227,15 +247,16 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
                       anchor: const Offset(0.5, 0.5),
                       zIndexInt: 3,
                     ),
-                  if (widget.vehicleProgress != null)
+                  if (widget.vehiclePosition == null &&
+                      widget.vehicleProgress != null)
                     _routeVehicleMarker(
                       route,
                       icons.vehicle,
                       widget.vehicleProgress!,
                     ),
+                  if (widget.showCars && widget.vehiclePosition == null)
+                    ..._nearbyVehicleMarkers(route, icons.vehicle),
                 },
-                if (icons != null && widget.showCars)
-                  ..._nearbyVehicleMarkers(route, icons.vehicle),
               },
               onMapTap: widget.onMapTap,
               onCameraMove: _handleCameraMove,

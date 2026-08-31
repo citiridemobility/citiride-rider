@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'citiride_auth_service.dart';
@@ -24,6 +25,9 @@ class CitirideOtpClient {
   final String _baseUrl;
 
   bool get hasConfiguredBaseUrl => _baseUrl.isNotEmpty;
+
+  /// Host currently used for OTP requests (for diagnostics).
+  String get baseUrl => _baseUrl;
 
   static String _resolveBaseUrl(String? override) {
     final configured = (override ?? _configuredBaseUrl).trim();
@@ -60,7 +64,7 @@ class CitirideOtpClient {
     throw _mapError(response);
   }
 
-  Future<void> verifyOtp({
+  Future<CitirideOtpVerifyResult> verifyOtp({
     required String email,
     required String code,
     required CitirideOtpPurpose purpose,
@@ -72,7 +76,13 @@ class CitirideOtpClient {
     });
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      return;
+      final body = _decodeMap(response.body);
+      final token = (body['firebaseCustomToken'] as String?)?.trim();
+      return CitirideOtpVerifyResult(
+        email: (body['email'] as String?) ?? email,
+        purpose: purpose,
+        firebaseCustomToken: token != null && token.isNotEmpty ? token : null,
+      );
     }
 
     throw _mapError(response);
@@ -96,10 +106,17 @@ class CitirideOtpClient {
             },
             body: jsonEncode(body),
           )
-          .timeout(const Duration(seconds: 20));
-    } on Object {
-      throw const CitirideAuthException(
-        'Unable to reach the verification service. Start the OTP API or set CITIRIDE_OTP_API_URL.',
+          .timeout(const Duration(seconds: 30));
+    } on CitirideAuthException {
+      rethrow;
+    } on Object catch (error, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('OTP API request failed ($_baseUrl$path): $error');
+        debugPrintStack(stackTrace: stackTrace);
+      }
+      throw CitirideAuthException(
+        'Could not reach the verification service at $_baseUrl. '
+        'Check your internet connection and try again.',
         code: 'network-error',
       );
     }
@@ -151,4 +168,16 @@ class CitirideOtpSendResult {
   final bool demoMode;
   final String? demoCode;
   final int? expiresInMs;
+}
+
+class CitirideOtpVerifyResult {
+  const CitirideOtpVerifyResult({
+    required this.email,
+    required this.purpose,
+    this.firebaseCustomToken,
+  });
+
+  final String email;
+  final CitirideOtpPurpose purpose;
+  final String? firebaseCustomToken;
 }

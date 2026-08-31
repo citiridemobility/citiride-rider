@@ -55,7 +55,16 @@ export function riderUidFromEmail(email) {
 }
 
 /**
- * Mint a Firebase custom token after email OTP succeeds.
+ * Stable Firebase Auth uid for a driver email.
+ * Prefixed so the same person can hold separate rider + driver Auth accounts.
+ */
+export function driverUidFromEmail(email) {
+  const base = riderUidFromEmail(email);
+  return base ? `drv_${base}` : '';
+}
+
+/**
+ * Mint a Firebase custom token after rider email OTP succeeds.
  * @returns {Promise<string|null>}
  */
 export async function createRiderCustomToken(email) {
@@ -73,4 +82,27 @@ export async function createRiderCustomToken(email) {
     riderId: uid,
     role: 'rider',
   });
+}
+
+/**
+ * Mint a Firebase custom token after driver email OTP succeeds.
+ * @returns {Promise<{ token: string, uid: string }|null>}
+ */
+export async function createDriverCustomToken(email) {
+  if (!initFirebaseAdmin()) {
+    return null;
+  }
+
+  const uid = driverUidFromEmail(email);
+  if (!uid) {
+    return null;
+  }
+
+  const token = await admin.auth().createCustomToken(uid, {
+    email,
+    driverId: uid,
+    role: 'driver',
+  });
+
+  return { token, uid };
 }

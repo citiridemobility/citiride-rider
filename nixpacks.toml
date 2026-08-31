@@ -1,0 +1,9 @@
+# Fallback when Railway Root Directory is the monorepo root (not recommended).
+# Prefer setting Root Directory to services/otp-api in the Railway dashboard.
+providers = ["node"]
+
+[phases.install]
+cmds = ["cd services/otp-api && npm ci --omit=dev"]
+
+[start]
+cmd = "cd services/otp-api && npm start"

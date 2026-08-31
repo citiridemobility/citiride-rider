@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/auth/citiride_auth_service.dart';
+import '../../core/location/citiride_fare.dart';
 import '../../core/location/route_query.dart';
 import '../../features/auth/presentation/enter_code_screen.dart';
 import '../../features/auth/presentation/enter_number_screen.dart';
@@ -457,6 +458,9 @@ abstract final class AppRouter {
                 state.uri.queryParameters,
                 'destination',
               ),
+              initialEstimatedFare: parseEstimatedFareQuery(
+                state.uri.queryParameters['fare'],
+              ),
             );
           },
         ),
@@ -482,6 +486,10 @@ abstract final class AppRouter {
               ),
               showDestinationChangeNotice:
                   state.uri.queryParameters['destinationChanged'] == 'true',
+              estimatedFare: parseEstimatedFareQuery(
+                state.uri.queryParameters['fare'],
+              ),
+              rideId: state.uri.queryParameters['rideId'],
             );
           },
         ),
@@ -505,6 +513,10 @@ abstract final class AppRouter {
                 state.uri.queryParameters,
                 'destination',
               ),
+              estimatedFare: parseEstimatedFareQuery(
+                state.uri.queryParameters['fare'],
+              ),
+              rideId: state.uri.queryParameters['rideId'],
             );
           },
         ),
@@ -528,6 +540,10 @@ abstract final class AppRouter {
                 state.uri.queryParameters,
                 'destination',
               ),
+              estimatedFare: parseEstimatedFareQuery(
+                state.uri.queryParameters['fare'],
+              ),
+              rideId: state.uri.queryParameters['rideId'],
             );
           },
         ),
@@ -551,6 +567,10 @@ abstract final class AppRouter {
                 state.uri.queryParameters,
                 'destination',
               ),
+              estimatedFare: parseEstimatedFareQuery(
+                state.uri.queryParameters['fare'],
+              ),
+              rideId: state.uri.queryParameters['rideId'],
             );
           },
         ),
@@ -571,6 +591,9 @@ abstract final class AppRouter {
             return RideSuccessScreen(
               rideType: state.uri.queryParameters['ride'] ?? 'regular',
               paymentMethod: state.uri.queryParameters['payment'] ?? 'cash',
+              estimatedFare: parseEstimatedFareQuery(
+                state.uri.queryParameters['fare'],
+              ),
             );
           },
         ),
@@ -581,6 +604,9 @@ abstract final class AppRouter {
             return ReviewScreen(
               rideType: state.uri.queryParameters['ride'] ?? 'regular',
               paymentMethod: state.uri.queryParameters['payment'] ?? 'cash',
+              estimatedFare: parseEstimatedFareQuery(
+                state.uri.queryParameters['fare'],
+              ),
             );
           },
         ),

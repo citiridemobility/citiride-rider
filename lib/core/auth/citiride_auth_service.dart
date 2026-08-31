@@ -1,9 +1,11 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 
 import 'citiride_otp_client.dart';
+import '../../features/ride/domain/live_ride.dart';
 
 const citirideDemoVerificationCode = '968999';
 
@@ -34,10 +36,12 @@ class CitirideAuthResult {
   const CitirideAuthResult({
     required this.mode,
     this.email,
+    this.uid,
   });
 
   final CitiridePhoneVerificationMode mode;
   final String? email;
+  final String? uid;
 }
 
 class CitirideAuthException implements Exception {
@@ -60,10 +64,12 @@ class CitirideAuthException implements Exception {
 class CitirideAuthService {
   CitirideAuthService({
     this._firestore,
+    this._auth,
     CitirideOtpClient? otpClient,
   }) : _otpClient = otpClient ?? CitirideOtpClient();
 
   final FirebaseFirestore? _firestore;
+  final FirebaseAuth? _auth;
   final CitirideOtpClient _otpClient;
 
   static const _forceDemoEmailOtp = bool.fromEnvironment(
@@ -73,7 +79,26 @@ class CitirideAuthService {
   FirebaseFirestore get _firebaseFirestore =>
       _firestore ?? FirebaseFirestore.instance;
 
+  FirebaseAuth get _firebaseAuth => _auth ?? FirebaseAuth.instance;
+
   bool get _hasFirebaseApp => Firebase.apps.isNotEmpty;
+
+  /// Current Firebase Auth uid when signed in after email OTP.
+  String? get currentUid =>
+      _hasFirebaseApp ? _firebaseAuth.currentUser?.uid : null;
+
+  /// Stable rider id for Firestore rides (Auth uid, else email-derived).
+  String? riderIdForEmail(String? email) {
+    final uid = currentUid?.trim();
+    if (uid != null && uid.isNotEmpty) {
+      return uid;
+    }
+    final clean = _cleanEmail(email);
+    if (clean == null) {
+      return null;
+    }
+    return riderIdFromEmail(clean);
+  }
 
   /// Phone SMS OTP is no longer used for login. Kept for older routes.
   Future<CitiridePhoneVerificationStart> startPhoneVerification({
@@ -152,21 +177,24 @@ class CitirideAuthService {
       return CitirideAuthResult(
         mode: CitiridePhoneVerificationMode.demo,
         email: cleanEmail,
+        uid: currentUid,
       );
     }
 
     try {
-      await _otpClient.verifyOtp(
+      final verified = await _otpClient.verifyOtp(
         email: cleanEmail,
         code: code,
         purpose: purpose,
       );
+      final uid = await _signInWithCustomToken(verified.firebaseCustomToken);
       // Never block login on Firestore — it was causing mobile OTP timeouts
       // after the server had already verified the code and sent welcome mail.
-      unawaited(_saveEmailProfile(email: cleanEmail));
+      unawaited(_saveEmailProfile(email: cleanEmail, uid: uid));
       return CitirideAuthResult(
-        mode: CitiridePhoneVerificationMode.demo,
+        mode: CitiridePhoneVerificationMode.firebase,
         email: cleanEmail,
+        uid: uid ?? currentUid,
       );
     } on CitirideAuthException {
       rethrow;
@@ -177,19 +205,53 @@ class CitirideAuthService {
     }
   }
 
-  Future<void> _saveEmailProfile({required String email}) async {
+  Future<String?> _signInWithCustomToken(String? token) async {
+    final clean = token?.trim();
+    if (clean == null || clean.isEmpty || !_hasFirebaseApp) {
+      return null;
+    }
+
+    try {
+      final credential = await _firebaseAuth
+          .signInWithCustomToken(clean)
+          .timeout(const Duration(seconds: 12));
+      return credential.user?.uid;
+    } on Object {
+      // Local session + OTP success still stand if Auth sign-in fails.
+      return null;
+    }
+  }
+
+  Future<void> signOut() async {
+    if (!_hasFirebaseApp) {
+      return;
+    }
+    try {
+      await _firebaseAuth.signOut().timeout(const Duration(seconds: 4));
+    } on Object {
+      // Local logout should never hang on Auth.
+    }
+  }
+
+  Future<void> _saveEmailProfile({
+    required String email,
+    String? uid,
+  }) async {
     if (!_hasFirebaseApp) {
       return;
     }
 
     try {
-      final docId = email.replaceAll(RegExp(r'[^a-z0-9@._+-]'), '_');
+      final docId = (uid != null && uid.trim().isNotEmpty)
+          ? uid.trim()
+          : riderIdFromEmail(email);
       await _firebaseFirestore
           .collection('riders')
           .doc(docId)
           .set({
             'email': email,
             'authProvider': 'email_otp',
+            'riderId': docId,
             'updatedAt': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true))
           .timeout(const Duration(seconds: 4));

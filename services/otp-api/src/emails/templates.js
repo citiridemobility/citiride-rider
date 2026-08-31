@@ -143,6 +143,69 @@ export function riderWelcomeEmailText({ email }) {
   ].join('\n');
 }
 
+export function driverWelcomeEmailHtml({ email }) {
+  const firstName = guessFirstName(email);
+
+  return emailShell({
+    preheader: 'Welcome to CitiRide Driver. Your driver account is ready.',
+    title: firstName ? `Welcome, ${firstName}` : 'Welcome to CitiRide Driver',
+    bodyHtml: `
+      <p style="margin:0 0 22px;color:${brand.muted};font-size:15px;line-height:1.65;font-family:${brand.font};">
+        Your driver account is ready. Complete your vehicle registration, go online when you’re ready, and start accepting ride requests.
+      </p>
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 24px;border-collapse:collapse;">
+        <tr>
+          <td style="padding:0 0 14px;">
+            <p style="margin:0;color:${brand.black};font-size:14px;font-weight:700;line-height:1.5;font-family:${brand.font};">
+              Finish registration
+            </p>
+            <p style="margin:4px 0 0;color:${brand.soft};font-size:13px;line-height:1.5;font-family:${brand.font};">
+              Add your vehicle details and documents so you can start driving.
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:14px 0;border-top:1px solid ${brand.border};">
+            <p style="margin:0;color:${brand.black};font-size:14px;font-weight:700;line-height:1.5;font-family:${brand.font};">
+              Go online
+            </p>
+            <p style="margin:4px 0 0;color:${brand.soft};font-size:13px;line-height:1.5;font-family:${brand.font};">
+              Toggle availability on the home screen to receive nearby ride requests.
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:14px 0 0;border-top:1px solid ${brand.border};">
+            <p style="margin:0;color:${brand.black};font-size:14px;font-weight:700;line-height:1.5;font-family:${brand.font};">
+              Track earnings
+            </p>
+            <p style="margin:4px 0 0;color:${brand.soft};font-size:13px;line-height:1.5;font-family:${brand.font};">
+              View completed trips and wallet activity from the app.
+            </p>
+          </td>
+        </tr>
+      </table>
+      <p style="margin:0;color:${brand.soft};font-size:13px;line-height:1.55;font-family:${brand.font};">
+        Open the CitiRide Driver app to get started.<br/><br/>
+        — CitiRide
+      </p>
+    `,
+  });
+}
+
+export function driverWelcomeEmailText({ email }) {
+  const firstName = guessFirstName(email);
+  return [
+    firstName ? `Welcome, ${firstName}` : 'Welcome to CitiRide Driver',
+    '',
+    'Your driver account is ready. Complete your vehicle registration, go online when you’re ready, and start accepting ride requests.',
+    '',
+    'Open the CitiRide Driver app to get started.',
+    '',
+    '— CitiRide',
+  ].join('\n');
+}
+
 function emailShell({ preheader, title, bodyHtml }) {
   const logoUrl = publicLogoUrl();
   const year = new Date().getFullYear();

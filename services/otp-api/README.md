@@ -2,9 +2,20 @@
 
 ## Endpoints
 
+### Rider (Flutter)
+
 - `GET /health`
 - `POST /v1/otp/send` `{ "email": "user@example.com", "purpose": "login" | "wallet" | "reset_pin" }`
-- `POST /v1/otp/verify` `{ "email": "user@example.com", "code": "123456", "purpose": "login" }`
+- `POST /v1/otp/verify` `{ "email": "user@example.com", "code": "123456", "purpose": "login" }`  
+  → may include `firebaseCustomToken` (`role: rider`)
+
+### Driver (React Native)
+
+- `POST /v1/driver/otp/send` `{ "email": "driver@example.com" }`
+- `POST /v1/driver/otp/verify` `{ "email": "driver@example.com", "code": "123456" }`  
+  → may include `firebaseCustomToken` + `driverId` (`role: driver`, UID prefixed `drv_`) and `welcomeEmail` (`sent` | `skipped` | `failed`)
+
+See `/driver-integration` in the rider repo for the RN handoff pack.
 
 ## Local run
 
@@ -27,14 +38,36 @@ Without `RESEND_API_KEY`, the API runs in **demo mode** and always issues code `
 RESEND_API_KEY=re_xxx
 OTP_FROM_EMAIL=CitiRide <otp@yourdomain.com>
 OTP_DEMO_MODE=false
+FIREBASE_PROJECT_ID=citiride-d7743
+FIREBASE_SERVICE_ACCOUNT_JSON={...service account json...}
 ```
 
-4. Deploy this folder (Railway, etc.) and point the Flutter app at it:
+4. Deploy from the **monorepo root**:
 
 ```bash
-# Optional override — release APKs already default to the Railway URL.
+cd /path/to/citiride-rider
+railway link --service otp-api   # once
+railway up --service otp-api
+```
+
+**Critical Railway setting (otp-api service → Settings → Source):**
+
+| Setting | Value |
+|--------|--------|
+| **Root Directory** | `services/otp-api` |
+| **Config file** | `railway.toml` |
+
+With Root Directory set to `services/otp-api`, Railway uploads only the Node API (not the Flutter app).  
+If Root Directory is empty, the repo-root `nixpacks.toml` fallback is used — but **Option A is strongly recommended**.
+
+`nixpacks.toml` forces a **Node-only** build so Railway does not run `dart pub get` on the Flutter project.
+
+5. Point apps at the deployed URL:
+
+```bash
+# Rider (optional override)
 flutter run --dart-define=CITIRIDE_OTP_API_URL=https://your-otp-api.example.com
 ```
 
 Release/profile builds use `https://otp-api-production-db79.up.railway.app` by default.
-Debug builds still target the local API on port `8787`.
+Debug builds still target the local API on port `8787` when overridden.

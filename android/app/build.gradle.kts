@@ -43,7 +43,7 @@ val googleMapsApiKey = dartDefines["GOOGLE_MAPS_API_KEY"]
     ?: ""
 android {
     namespace = "com.citiride.citiride"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

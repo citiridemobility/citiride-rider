@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_colors.dart';
+import '../../../core/location/citiride_fare.dart';
 import '../../../shared/widgets/compatible_svg_picture.dart';
 
 class RideSuccessScreen extends StatefulWidget {
@@ -10,10 +11,12 @@ class RideSuccessScreen extends StatefulWidget {
     super.key,
     this.rideType = 'regular',
     this.paymentMethod = 'cash',
+    this.estimatedFare,
   });
 
   final String rideType;
   final String paymentMethod;
+  final double? estimatedFare;
 
   @override
   State<RideSuccessScreen> createState() => _RideSuccessScreenState();
@@ -36,7 +39,13 @@ class _RideSuccessScreenState extends State<RideSuccessScreen> {
 
   bool get _canSubmit => _rating > 0 && _selectedComment != null;
 
-  String get _price => widget.rideType == 'vip' ? '\u20A67500' : '\u20A63500';
+  String get _price {
+    final amount = widget.estimatedFare ??
+        CitirideFareCalculator.fallback(
+          CitirideFareRates.tierFromRideType(widget.rideType),
+        ).estimatedTotal;
+    return formatNaira(amount);
+  }
 
   String get _paymentLabel {
     return widget.paymentMethod == 'wallet' ? 'CitiRide Wallet' : 'Cash';
@@ -71,6 +80,8 @@ class _RideSuccessScreenState extends State<RideSuccessScreen> {
       queryParameters: {
         'ride': widget.rideType,
         'payment': widget.paymentMethod,
+        if (widget.estimatedFare != null)
+          'fare': widget.estimatedFare!.round().toString(),
       },
     );
     context.push(reviewUri.toString());
@@ -221,10 +232,12 @@ class ReviewScreen extends StatefulWidget {
     super.key,
     this.rideType = 'regular',
     this.paymentMethod = 'cash',
+    this.estimatedFare,
   });
 
   final String rideType;
   final String paymentMethod;
+  final double? estimatedFare;
 
   @override
   State<ReviewScreen> createState() => _ReviewScreenState();

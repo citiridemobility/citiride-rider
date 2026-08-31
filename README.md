@@ -21,6 +21,18 @@ flutter pub get
 flutter run
 ```
 
+## Email OTP (sign-up / login)
+
+The rider app calls the hosted OTP API at `https://otp-api-production-db79.up.railway.app` by default — **no extra config needed** for release APKs.
+
+**Important:** `CITIRIDE_OTP_API_URL` on **Railway** only affects the server repo env file; it does **not** configure the Flutter app on your phone. To point the app at a different API URL, rebuild with:
+
+```bash
+flutter build apk --release --dart-define=CITIRIDE_OTP_API_URL=https://otp-api-production-db79.up.railway.app
+```
+
+After changing OTP API code, deploy the **otp-api** service on Railway (see `services/otp-api/README.md`), then reinstall the APK if needed.
+
 ## Google Maps
 
 Enable these APIs in Google Cloud for your key: Maps SDK for Android, Maps SDK for iOS, Maps JavaScript API, Places API, Geocoding API, and Routes API.

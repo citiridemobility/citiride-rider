@@ -1,0 +1,8 @@
+# Used when Railway Root Directory = services/otp-api (recommended).
+providers = ["node"]
+
+[phases.install]
+cmds = ["npm ci --omit=dev"]
+
+[start]
+cmd = "npm start"

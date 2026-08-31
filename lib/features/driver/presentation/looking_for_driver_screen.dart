@@ -9,11 +9,18 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../app/theme/app_colors.dart';
+import '../../../core/auth/citiride_auth_service.dart';
+import '../../../core/location/citiride_fare.dart';
 import '../../../core/location/citiride_place.dart';
 import '../../../core/location/citiride_route.dart';
 import '../../../core/location/citiride_route_service.dart';
 import '../../../core/location/route_query.dart';
+import '../../../core/maps/google_maps_config.dart';
+import '../../../core/session/citiride_session_store.dart';
 import '../../pickup/presentation/select_pickup_location_screen.dart';
+import '../../ride/data/ride_repository.dart';
+import '../../ride/domain/live_ride.dart';
+import '../../ride/presentation/ride_trip_session.dart';
 import '../../../shared/widgets/citiride_live_route_map.dart';
 import '../../../shared/widgets/compatible_svg_picture.dart';
 
@@ -36,6 +43,8 @@ Map<String, String> _rideFlowQueryParameters({
   LatLng? destinationLatLng,
   String? mode,
   String? returnTo,
+  String? rideId,
+  double? estimatedFare,
   bool showStop = false,
   bool destinationChanged = false,
 }) {
@@ -48,6 +57,8 @@ Map<String, String> _rideFlowQueryParameters({
     ...latLngToQuery('destination', destinationLatLng),
     ..._optionalQueryParameter('mode', mode),
     ..._optionalQueryParameter('returnTo', returnTo),
+    ..._optionalQueryParameter('rideId', rideId),
+    if (estimatedFare != null) 'fare': estimatedFare.round().toString(),
     if (showStop) 'showStop': 'true',
     if (destinationChanged) 'destinationChanged': 'true',
   };
@@ -80,6 +91,7 @@ class LookingForDriverScreen extends StatefulWidget {
     this.paymentMethod = 'cash',
     this.initialPickupLatLng,
     this.initialDestinationLatLng,
+    this.initialEstimatedFare,
   });
 
   final String rideType;
@@ -88,6 +100,7 @@ class LookingForDriverScreen extends StatefulWidget {
   final String paymentMethod;
   final LatLng? initialPickupLatLng;
   final LatLng? initialDestinationLatLng;
+  final double? initialEstimatedFare;
 
   @override
   State<LookingForDriverScreen> createState() => _LookingForDriverScreenState();
@@ -99,6 +112,21 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
   LatLng? _pickupLatLng;
   LatLng? _destinationLatLng;
   Timer? _driverFoundTimer;
+  final _rideRepository = RideRepository();
+  final _routeService = CitirideRouteService();
+  final _sessionStore = const CitirideSessionStore();
+  StreamSubscription<LiveRide>? _rideSubscription;
+  String? _rideId;
+  String? _matchError;
+  bool _isCreatingRequest = true;
+  bool _hasNavigatedToDriver = false;
+  double? _estimatedFare;
+
+  bool get _isRunningWidgetTest {
+    return WidgetsBinding.instance.runtimeType.toString().contains(
+      'TestWidgetsFlutterBinding',
+    );
+  }
 
   @override
   void initState() {
@@ -107,7 +135,13 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
     _destination = _normalizedDestination(widget.initialDestination);
     _pickupLatLng = widget.initialPickupLatLng;
     _destinationLatLng = widget.initialDestinationLatLng;
-    _driverFoundTimer = Timer(_driverFoundDelay, _showDriverFound);
+    _estimatedFare = widget.initialEstimatedFare;
+    if (_isRunningWidgetTest) {
+      _isCreatingRequest = false;
+      _driverFoundTimer = Timer(_driverFoundDelay, _showDriverFound);
+      return;
+    }
+    unawaited(_startRideMatching());
   }
 
   @override
@@ -130,6 +164,7 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
   @override
   void dispose() {
     _driverFoundTimer?.cancel();
+    unawaited(_rideSubscription?.cancel() ?? Future<void>.value());
     super.dispose();
   }
 
@@ -141,10 +176,130 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
     return _normalizeDestinationLabel(value);
   }
 
-  void _showDriverFound() {
-    if (!mounted) {
+  Future<void> _startRideMatching() async {
+    try {
+      final email = await _sessionStore.signedInEmail();
+      if (!mounted) {
+        return;
+      }
+
+      if (email == null || email.isEmpty) {
+        setState(() {
+          _isCreatingRequest = false;
+          _matchError = 'Sign in to request a ride.';
+        });
+        return;
+      }
+
+      final riderId =
+          CitirideAuthService().riderIdForEmail(email) ??
+          riderIdFromEmail(email);
+
+      final pickupPoint = _pickupLatLng ?? GoogleMapsConfig.defaultCenter;
+      final destinationPoint =
+          _destinationLatLng ?? GoogleMapsConfig.defaultCenter;
+
+      final route = await _routeService.routeBetween(
+        origin: pickupPoint,
+        destination: destinationPoint,
+      );
+      final estimatedFare = estimatedFareForRideType(
+        widget.rideType,
+        route: route,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _estimatedFare = estimatedFare;
+      });
+
+      final ride = await _rideRepository.requestRide(
+        NewRideRequest(
+          riderId: riderId,
+          pickup: RideLatLng(
+            lat: pickupPoint.latitude,
+            lng: pickupPoint.longitude,
+            address: _pickupLocation,
+          ),
+          destination: RideLatLng(
+            lat: destinationPoint.latitude,
+            lng: destinationPoint.longitude,
+            address: _destination,
+          ),
+          estimatedFare: estimatedFare,
+          rideType: widget.rideType,
+          paymentMethod: widget.paymentMethod,
+        ),
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _rideId = ride.id;
+        _isCreatingRequest = false;
+        _matchError = null;
+      });
+
+      await _rideSubscription?.cancel();
+      _rideSubscription = _rideRepository.watchRide(ride.id).listen(
+        _handleRideUpdate,
+        onError: (Object error) {
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            _matchError = 'Lost connection to your ride request.';
+          });
+        },
+      );
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      // Keep the screen usable offline / misconfigured Firebase.
+      setState(() {
+        _isCreatingRequest = false;
+        _matchError =
+            'Could not reach matching. Retrying with local demo shortly.';
+      });
+      debugPrint('Ride matching failed: $error');
+      _driverFoundTimer?.cancel();
+      _driverFoundTimer = Timer(_driverFoundDelay, _showDriverFound);
+    }
+  }
+
+  void _handleRideUpdate(LiveRide ride) {
+    if (!mounted || _hasNavigatedToDriver) {
       return;
     }
+
+    if (ride.status == RideStatus.cancelled) {
+      setState(() {
+        _matchError = 'This ride request was cancelled.';
+      });
+      return;
+    }
+
+    if (ride.status.hasDriverAssigned || ride.driverId?.isNotEmpty == true) {
+      if (ride.fare.estimated > 0) {
+        _estimatedFare = ride.fare.estimated;
+      }
+      _showDriverFound();
+    }
+  }
+
+  void _showDriverFound() {
+    if (!mounted || _hasNavigatedToDriver) {
+      return;
+    }
+    _hasNavigatedToDriver = true;
+    _driverFoundTimer?.cancel();
+    unawaited(_rideSubscription?.cancel() ?? Future<void>.value());
 
     final driverFoundUri = Uri(
       path: '/driver-found',
@@ -155,6 +310,8 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
         destination: _destination,
         pickupLatLng: _pickupLatLng,
         destinationLatLng: _destinationLatLng,
+        rideId: _rideId,
+        estimatedFare: _estimatedFare,
       ),
     );
     context.go(driverFoundUri.toString());
@@ -162,6 +319,7 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
 
   void _close(BuildContext context) {
     _driverFoundTimer?.cancel();
+    unawaited(_cancelOpenRequest());
     if (context.canPop()) {
       context.pop();
       return;
@@ -172,6 +330,7 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
 
   void _editRoute(BuildContext context, {bool showStop = false}) {
     _driverFoundTimer?.cancel();
+    unawaited(_cancelOpenRequest());
     final routeUri = Uri(
       path: '/route',
       queryParameters: _rideFlowQueryParameters(
@@ -181,6 +340,8 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
         destination: _destination,
         pickupLatLng: _pickupLatLng,
         destinationLatLng: _destinationLatLng,
+        rideId: _rideId,
+        estimatedFare: _estimatedFare,
         showStop: showStop,
       ),
     );
@@ -208,6 +369,20 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
     });
   }
 
+  Future<void> _cancelOpenRequest() async {
+    final rideId = _rideId;
+    await _rideSubscription?.cancel();
+    _rideSubscription = null;
+    if (rideId == null || rideId.isEmpty) {
+      return;
+    }
+    try {
+      await _rideRepository.cancelRide(rideId);
+    } on Object {
+      // Best-effort cancel; UI should still leave the matching screen.
+    }
+  }
+
   Future<void> _cancelRide(BuildContext context) async {
     final shouldCancel = await showModalBottomSheet<bool>(
       context: context,
@@ -220,6 +395,12 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
     );
 
     if (shouldCancel != true || !context.mounted) {
+      return;
+    }
+
+    _driverFoundTimer?.cancel();
+    await _cancelOpenRequest();
+    if (!context.mounted) {
       return;
     }
 
@@ -292,6 +473,12 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
                   bottom: 0,
                   height: panelHeight,
                   child: _LookingForDriverPanel(
+                    statusMessage: _isCreatingRequest
+                        ? 'Sending your ride request...'
+                        : (_matchError ??
+                              (_rideId == null
+                                  ? 'Looking for a driver nearby'
+                                  : 'Waiting for a nearby driver to accept')),
                     onEditPickup: () => _editPickup(context),
                     onCancelRide: () => _cancelRide(context),
                   ),
@@ -315,6 +502,8 @@ class DriverFoundScreen extends StatefulWidget {
     this.showDestinationChangeNotice = false,
     this.initialPickupLatLng,
     this.initialDestinationLatLng,
+    this.estimatedFare,
+    this.rideId,
   });
 
   final String rideType;
@@ -324,6 +513,8 @@ class DriverFoundScreen extends StatefulWidget {
   final bool showDestinationChangeNotice;
   final LatLng? initialPickupLatLng;
   final LatLng? initialDestinationLatLng;
+  final double? estimatedFare;
+  final String? rideId;
 
   @override
   State<DriverFoundScreen> createState() => _DriverFoundScreenState();
@@ -337,6 +528,36 @@ class _DriverFoundScreenState extends State<DriverFoundScreen> {
   late bool _showDestinationChangeNotice;
   Timer? _arrivingTimer;
   bool _isCardExpanded = false;
+  RideTripSession? _tripSession;
+  StreamSubscription<RideTripSnapshot>? _tripSub;
+  LatLng? _driverLatLng;
+  double? _driverHeading;
+  bool _hasNavigated = false;
+
+  bool get _isRunningWidgetTest {
+    return WidgetsBinding.instance.runtimeType.toString().contains(
+      'TestWidgetsFlutterBinding',
+    );
+  }
+
+  Map<String, String> get _flowQuery {
+    return _rideFlowQueryParameters(
+      rideType: widget.rideType,
+      paymentMethod: widget.paymentMethod,
+      pickup: _pickupLocation,
+      destination: _destination,
+      pickupLatLng: _pickupLatLng,
+      destinationLatLng: _destinationLatLng,
+      rideId: widget.rideId ?? _tripSession?.rideId,
+      estimatedFare: widget.estimatedFare,
+    );
+  }
+
+  String get _fareLabel {
+    final amount =
+        widget.estimatedFare ?? estimatedFareForRideType(widget.rideType);
+    return formatNaira(amount);
+  }
 
   @override
   void initState() {
@@ -347,7 +568,38 @@ class _DriverFoundScreenState extends State<DriverFoundScreen> {
     _destinationLatLng = widget.initialDestinationLatLng;
     _showDestinationChangeNotice = widget.showDestinationChangeNotice;
     _isCardExpanded = widget.showDestinationChangeNotice;
-    _startArrivingTimer();
+    _bindTripOrDemoTimer();
+  }
+
+  void _bindTripOrDemoTimer() {
+    final rideId = widget.rideId?.trim();
+    if (rideId == null || rideId.isEmpty || _isRunningWidgetTest) {
+      _startArrivingTimer();
+      return;
+    }
+
+    _tripSession = RideTripSession(rideId: rideId)..start();
+    _tripSub = _tripSession!.snapshots.listen((snapshot) {
+      if (!mounted || _hasNavigated) {
+        return;
+      }
+      setState(() {
+        _driverLatLng = snapshot.driverLatLng;
+        _driverHeading = snapshot.driverHeading;
+      });
+      navigateForRideSnapshot(
+        context: context,
+        screenStatus: RideStatus.accepted,
+        snapshot: snapshot,
+        queryParameters: _flowQuery,
+      );
+      if (shouldNavigateForStatus(
+        currentScreen: RideStatus.accepted,
+        fromFirestore: snapshot.ride.status,
+      )) {
+        _hasNavigated = true;
+      }
+    });
   }
 
   @override
@@ -372,40 +624,49 @@ class _DriverFoundScreenState extends State<DriverFoundScreen> {
         _isCardExpanded = true;
       }
     }
-    if (widget.initialPickupLocation != oldWidget.initialPickupLocation ||
-        widget.initialDestination != oldWidget.initialDestination ||
-        widget.showDestinationChangeNotice !=
-            oldWidget.showDestinationChangeNotice) {
+    if (widget.rideId != oldWidget.rideId) {
+      unawaited(_disposeTrip());
+      _bindTripOrDemoTimer();
+    } else if ((widget.rideId == null || widget.rideId!.isEmpty) &&
+        (widget.initialPickupLocation != oldWidget.initialPickupLocation ||
+            widget.initialDestination != oldWidget.initialDestination ||
+            widget.showDestinationChangeNotice !=
+                oldWidget.showDestinationChangeNotice)) {
       _startArrivingTimer();
     }
+  }
+
+  Future<void> _disposeTrip() async {
+    await _tripSub?.cancel();
+    _tripSub = null;
+    await _tripSession?.dispose();
+    _tripSession = null;
   }
 
   @override
   void dispose() {
     _arrivingTimer?.cancel();
+    unawaited(_disposeTrip());
     super.dispose();
   }
 
   void _startArrivingTimer() {
+    if (widget.rideId != null && widget.rideId!.trim().isNotEmpty) {
+      return;
+    }
     _arrivingTimer?.cancel();
     _arrivingTimer = Timer(_driverConfirmDelay, _showArriving);
   }
 
   void _showArriving() {
-    if (!mounted) {
+    if (!mounted || _hasNavigated) {
       return;
     }
+    _hasNavigated = true;
 
     final arrivingUri = Uri(
       path: '/arriving',
-      queryParameters: _rideFlowQueryParameters(
-        rideType: widget.rideType,
-        paymentMethod: widget.paymentMethod,
-        pickup: _pickupLocation,
-        destination: _destination,
-        pickupLatLng: _pickupLatLng,
-        destinationLatLng: _destinationLatLng,
-      ),
+      queryParameters: _flowQuery,
     );
     context.go(arrivingUri.toString());
   }
@@ -553,7 +814,9 @@ class _DriverFoundScreenState extends State<DriverFoundScreen> {
                     pickupLatLng: _pickupLatLng,
                     destinationLatLng: _destinationLatLng,
                     routeSemanticsLabel: 'Driver found map cars',
-                    vehicleProgress: 0.08,
+                    vehicleProgress: _driverLatLng == null ? 0.08 : null,
+                    driverLatLng: _driverLatLng,
+                    driverHeading: _driverHeading,
                     vehicleAsset: 'assets/images/Car img - select ride.svg',
                     vehicleWidth: 58,
                     vehicleHeight: 34,
@@ -586,6 +849,8 @@ class _DriverFoundScreenState extends State<DriverFoundScreen> {
                     destination: _destination,
                     showDestinationChangeNotice: _showDestinationChangeNotice,
                     isExpanded: _isCardExpanded,
+                    paymentMethod: widget.paymentMethod,
+                    fareLabel: _fareLabel,
                     onExpand: _expandCard,
                     onCollapse: _collapseCard,
                     onEditPickup: () => _editPickup(context),
@@ -614,6 +879,8 @@ class ArrivingScreen extends StatefulWidget {
     this.paymentMethod = 'cash',
     this.initialPickupLatLng,
     this.initialDestinationLatLng,
+    this.estimatedFare,
+    this.rideId,
   });
 
   final String rideType;
@@ -622,6 +889,8 @@ class ArrivingScreen extends StatefulWidget {
   final String paymentMethod;
   final LatLng? initialPickupLatLng;
   final LatLng? initialDestinationLatLng;
+  final double? estimatedFare;
+  final String? rideId;
 
   @override
   State<ArrivingScreen> createState() => _ArrivingScreenState();
@@ -634,6 +903,36 @@ class _ArrivingScreenState extends State<ArrivingScreen> {
   LatLng? _destinationLatLng;
   _ArrivingSheetStage _sheetStage = _ArrivingSheetStage.collapsed;
   Timer? _rideArrivalTimer;
+  RideTripSession? _tripSession;
+  StreamSubscription<RideTripSnapshot>? _tripSub;
+  LatLng? _driverLatLng;
+  double? _driverHeading;
+  bool _hasNavigated = false;
+
+  bool get _isRunningWidgetTest {
+    return WidgetsBinding.instance.runtimeType.toString().contains(
+      'TestWidgetsFlutterBinding',
+    );
+  }
+
+  Map<String, String> get _flowQuery {
+    return _rideFlowQueryParameters(
+      rideType: widget.rideType,
+      paymentMethod: widget.paymentMethod,
+      pickup: _pickupLocation,
+      destination: _destination,
+      pickupLatLng: _pickupLatLng,
+      destinationLatLng: _destinationLatLng,
+      rideId: widget.rideId ?? _tripSession?.rideId,
+      estimatedFare: widget.estimatedFare,
+    );
+  }
+
+  String get _fareLabel {
+    final amount =
+        widget.estimatedFare ?? estimatedFareForRideType(widget.rideType);
+    return formatNaira(amount);
+  }
 
   @override
   void initState() {
@@ -642,7 +941,37 @@ class _ArrivingScreenState extends State<ArrivingScreen> {
     _destination = _normalizedDestination(widget.initialDestination);
     _pickupLatLng = widget.initialPickupLatLng;
     _destinationLatLng = widget.initialDestinationLatLng;
-    _startRideArrivalTimer();
+    _bindTripOrDemoTimer();
+  }
+
+  void _bindTripOrDemoTimer() {
+    final rideId = widget.rideId?.trim();
+    if (rideId == null || rideId.isEmpty || _isRunningWidgetTest) {
+      _startRideArrivalTimer();
+      return;
+    }
+    _tripSession = RideTripSession(rideId: rideId)..start();
+    _tripSub = _tripSession!.snapshots.listen((snapshot) {
+      if (!mounted || _hasNavigated) {
+        return;
+      }
+      setState(() {
+        _driverLatLng = snapshot.driverLatLng;
+        _driverHeading = snapshot.driverHeading;
+      });
+      navigateForRideSnapshot(
+        context: context,
+        screenStatus: RideStatus.arriving,
+        snapshot: snapshot,
+        queryParameters: _flowQuery,
+      );
+      if (shouldNavigateForStatus(
+        currentScreen: RideStatus.arriving,
+        fromFirestore: snapshot.ride.status,
+      )) {
+        _hasNavigated = true;
+      }
+    });
   }
 
   @override
@@ -660,38 +989,47 @@ class _ArrivingScreenState extends State<ArrivingScreen> {
     if (widget.initialDestinationLatLng != oldWidget.initialDestinationLatLng) {
       _destinationLatLng = widget.initialDestinationLatLng;
     }
-    if (widget.initialPickupLocation != oldWidget.initialPickupLocation ||
-        widget.initialDestination != oldWidget.initialDestination) {
+    if (widget.rideId != oldWidget.rideId) {
+      unawaited(_disposeTrip());
+      _bindTripOrDemoTimer();
+    } else if ((widget.rideId == null || widget.rideId!.isEmpty) &&
+        (widget.initialPickupLocation != oldWidget.initialPickupLocation ||
+            widget.initialDestination != oldWidget.initialDestination)) {
       _startRideArrivalTimer();
     }
+  }
+
+  Future<void> _disposeTrip() async {
+    await _tripSub?.cancel();
+    _tripSub = null;
+    await _tripSession?.dispose();
+    _tripSession = null;
   }
 
   @override
   void dispose() {
     _rideArrivalTimer?.cancel();
+    unawaited(_disposeTrip());
     super.dispose();
   }
 
   void _startRideArrivalTimer() {
+    if (widget.rideId != null && widget.rideId!.trim().isNotEmpty) {
+      return;
+    }
     _rideArrivalTimer?.cancel();
     _rideArrivalTimer = Timer(_arrivingToRideArrivalDelay, _showRideArrival);
   }
 
   void _showRideArrival() {
-    if (!mounted) {
+    if (!mounted || _hasNavigated) {
       return;
     }
+    _hasNavigated = true;
 
     final rideArrivalUri = Uri(
       path: '/ride-arrival',
-      queryParameters: _rideFlowQueryParameters(
-        rideType: widget.rideType,
-        paymentMethod: widget.paymentMethod,
-        pickup: _pickupLocation,
-        destination: _destination,
-        pickupLatLng: _pickupLatLng,
-        destinationLatLng: _destinationLatLng,
-      ),
+      queryParameters: _flowQuery,
     );
     context.go(rideArrivalUri.toString());
   }
@@ -871,7 +1209,9 @@ class _ArrivingScreenState extends State<ArrivingScreen> {
                     pickupLatLng: _pickupLatLng,
                     destinationLatLng: _destinationLatLng,
                     routeSemanticsLabel: 'Arriving map image',
-                    vehicleProgress: 0.18,
+                    vehicleProgress: _driverLatLng == null ? 0.18 : null,
+                    driverLatLng: _driverLatLng,
+                    driverHeading: _driverHeading,
                     vehicleAsset: 'assets/images/Car img - select ride.svg',
                     vehicleWidth: 58,
                     vehicleHeight: 34,
@@ -904,6 +1244,8 @@ class _ArrivingScreenState extends State<ArrivingScreen> {
                     pickupLocation: _pickupLocation,
                     destination: _destination,
                     sheetStage: _sheetStage,
+                    paymentMethod: widget.paymentMethod,
+                    fareLabel: _fareLabel,
                     onAdvance: _advanceSheet,
                     onRetreat: _retreatSheet,
                     onEditPickup: () => _editPickup(context),
@@ -932,6 +1274,8 @@ class RideArrivalScreen extends StatefulWidget {
     this.autoStartTrip = true,
     this.initialPickupLatLng,
     this.initialDestinationLatLng,
+    this.estimatedFare,
+    this.rideId,
   });
 
   final String rideType;
@@ -939,8 +1283,10 @@ class RideArrivalScreen extends StatefulWidget {
   final String initialDestination;
   final String paymentMethod;
   final bool autoStartTrip;
+  final double? estimatedFare;
   final LatLng? initialPickupLatLng;
   final LatLng? initialDestinationLatLng;
+  final String? rideId;
 
   @override
   State<RideArrivalScreen> createState() => _RideArrivalScreenState();
@@ -953,7 +1299,32 @@ class _RideArrivalScreenState extends State<RideArrivalScreen> {
   LatLng? _destinationLatLng;
   Timer? _drivingTimer;
   Timer? _waitingTimer;
-  int _remainingWaitSeconds = 300;
+  int _remainingWaitSeconds = CitirideFareRates.waitingGraceMinutes * 60;
+  int _overtimeWaitSeconds = 0;
+  RideTripSession? _tripSession;
+  StreamSubscription<RideTripSnapshot>? _tripSub;
+  LatLng? _driverLatLng;
+  double? _driverHeading;
+  bool _hasNavigated = false;
+
+  bool get _isRunningWidgetTest {
+    return WidgetsBinding.instance.runtimeType.toString().contains(
+      'TestWidgetsFlutterBinding',
+    );
+  }
+
+  Map<String, String> get _flowQuery {
+    return _rideFlowQueryParameters(
+      rideType: widget.rideType,
+      paymentMethod: widget.paymentMethod,
+      pickup: _pickupLocation,
+      destination: _destination,
+      pickupLatLng: _pickupLatLng,
+      destinationLatLng: _destinationLatLng,
+      rideId: widget.rideId ?? _tripSession?.rideId,
+      estimatedFare: widget.estimatedFare,
+    );
+  }
 
   @override
   void initState() {
@@ -963,9 +1334,39 @@ class _RideArrivalScreenState extends State<RideArrivalScreen> {
     _pickupLatLng = widget.initialPickupLatLng;
     _destinationLatLng = widget.initialDestinationLatLng;
     _startWaitingTimer();
-    if (widget.autoStartTrip) {
-      _startDrivingTimer();
+    _bindTripOrDemoTimer();
+  }
+
+  void _bindTripOrDemoTimer() {
+    final rideId = widget.rideId?.trim();
+    if (rideId == null || rideId.isEmpty || _isRunningWidgetTest) {
+      if (widget.autoStartTrip) {
+        _startDrivingTimer();
+      }
+      return;
     }
+    _tripSession = RideTripSession(rideId: rideId)..start();
+    _tripSub = _tripSession!.snapshots.listen((snapshot) {
+      if (!mounted || _hasNavigated) {
+        return;
+      }
+      setState(() {
+        _driverLatLng = snapshot.driverLatLng;
+        _driverHeading = snapshot.driverHeading;
+      });
+      navigateForRideSnapshot(
+        context: context,
+        screenStatus: RideStatus.waiting,
+        snapshot: snapshot,
+        queryParameters: _flowQuery,
+      );
+      if (shouldNavigateForStatus(
+        currentScreen: RideStatus.waiting,
+        fromFirestore: snapshot.ride.status,
+      )) {
+        _hasNavigated = true;
+      }
+    });
   }
 
   @override
@@ -983,16 +1384,28 @@ class _RideArrivalScreenState extends State<RideArrivalScreen> {
     if (widget.initialDestinationLatLng != oldWidget.initialDestinationLatLng) {
       _destinationLatLng = widget.initialDestinationLatLng;
     }
-    if (widget.autoStartTrip != oldWidget.autoStartTrip &&
+    if (widget.rideId != oldWidget.rideId) {
+      unawaited(_disposeTrip());
+      _bindTripOrDemoTimer();
+    } else if ((widget.rideId == null || widget.rideId!.isEmpty) &&
+        widget.autoStartTrip != oldWidget.autoStartTrip &&
         widget.autoStartTrip) {
       _startDrivingTimer();
     }
+  }
+
+  Future<void> _disposeTrip() async {
+    await _tripSub?.cancel();
+    _tripSub = null;
+    await _tripSession?.dispose();
+    _tripSession = null;
   }
 
   @override
   void dispose() {
     _drivingTimer?.cancel();
     _waitingTimer?.cancel();
+    unawaited(_disposeTrip());
     super.dispose();
   }
 
@@ -1005,6 +1418,9 @@ class _RideArrivalScreenState extends State<RideArrivalScreen> {
   }
 
   void _startDrivingTimer() {
+    if (widget.rideId != null && widget.rideId!.trim().isNotEmpty) {
+      return;
+    }
     _drivingTimer?.cancel();
     _drivingTimer = Timer(
       _rideArrivalToDrivingDelay,
@@ -1020,32 +1436,25 @@ class _RideArrivalScreenState extends State<RideArrivalScreen> {
         return;
       }
 
-      if (_remainingWaitSeconds <= 0) {
-        timer.cancel();
-        return;
-      }
-
       setState(() {
-        _remainingWaitSeconds -= 1;
+        if (_remainingWaitSeconds > 0) {
+          _remainingWaitSeconds -= 1;
+        } else {
+          _overtimeWaitSeconds += 1;
+        }
       });
     });
   }
 
   void _showDrivingToDestination() {
-    if (!mounted) {
+    if (!mounted || _hasNavigated) {
       return;
     }
+    _hasNavigated = true;
 
     final drivingUri = Uri(
       path: '/driving-to-destination',
-      queryParameters: _rideFlowQueryParameters(
-        rideType: widget.rideType,
-        paymentMethod: widget.paymentMethod,
-        pickup: _pickupLocation,
-        destination: _destination,
-        pickupLatLng: _pickupLatLng,
-        destinationLatLng: _destinationLatLng,
-      ),
+      queryParameters: _flowQuery,
     );
     context.go(drivingUri.toString());
   }
@@ -1128,7 +1537,9 @@ class _RideArrivalScreenState extends State<RideArrivalScreen> {
                     pickupLatLng: _pickupLatLng,
                     destinationLatLng: _destinationLatLng,
                     routeSemanticsLabel: 'Ride arrival map image',
-                    vehicleProgress: 0.02,
+                    vehicleProgress: _driverLatLng == null ? 0.02 : null,
+                    driverLatLng: _driverLatLng,
+                    driverHeading: _driverHeading,
                     vehicleAsset: 'assets/images/Car img - select ride.svg',
                     vehicleWidth: 58,
                     vehicleHeight: 34,
@@ -1153,6 +1564,7 @@ class _RideArrivalScreenState extends State<RideArrivalScreen> {
                   height: panelHeight,
                   child: _RideArrivalPanel(
                     remainingWaitSeconds: _remainingWaitSeconds,
+                    overtimeWaitSeconds: _overtimeWaitSeconds,
                     waitTimeLabel: _waitTimeLabel,
                     onNotesTap: () => _showPickupNotesChat(context),
                     onCallTap: () {},
@@ -1178,6 +1590,8 @@ class DrivingToDestinationScreen extends StatefulWidget {
     this.autoCompleteTrip = true,
     this.initialPickupLatLng,
     this.initialDestinationLatLng,
+    this.estimatedFare,
+    this.rideId,
   });
 
   final String rideType;
@@ -1187,6 +1601,8 @@ class DrivingToDestinationScreen extends StatefulWidget {
   final bool autoCompleteTrip;
   final LatLng? initialPickupLatLng;
   final LatLng? initialDestinationLatLng;
+  final double? estimatedFare;
+  final String? rideId;
 
   @override
   State<DrivingToDestinationScreen> createState() =>
@@ -1200,6 +1616,30 @@ class _DrivingToDestinationScreenState
   LatLng? _pickupLatLng;
   LatLng? _destinationLatLng;
   Timer? _rideSuccessTimer;
+  RideTripSession? _tripSession;
+  StreamSubscription<RideTripSnapshot>? _tripSub;
+  LatLng? _driverLatLng;
+  double? _driverHeading;
+  bool _hasNavigated = false;
+
+  bool get _isRunningWidgetTest {
+    return WidgetsBinding.instance.runtimeType.toString().contains(
+      'TestWidgetsFlutterBinding',
+    );
+  }
+
+  Map<String, String> get _flowQuery {
+    return _rideFlowQueryParameters(
+      rideType: widget.rideType,
+      paymentMethod: widget.paymentMethod,
+      pickup: _pickupLocation,
+      destination: _destination,
+      pickupLatLng: _pickupLatLng,
+      destinationLatLng: _destinationLatLng,
+      rideId: widget.rideId ?? _tripSession?.rideId,
+      estimatedFare: widget.estimatedFare,
+    );
+  }
 
   @override
   void initState() {
@@ -1208,9 +1648,39 @@ class _DrivingToDestinationScreenState
     _destination = _normalizedDestination(widget.initialDestination);
     _pickupLatLng = widget.initialPickupLatLng;
     _destinationLatLng = widget.initialDestinationLatLng;
-    if (widget.autoCompleteTrip) {
-      _startRideSuccessTimer();
+    _bindTripOrDemoTimer();
+  }
+
+  void _bindTripOrDemoTimer() {
+    final rideId = widget.rideId?.trim();
+    if (rideId == null || rideId.isEmpty || _isRunningWidgetTest) {
+      if (widget.autoCompleteTrip) {
+        _startRideSuccessTimer();
+      }
+      return;
     }
+    _tripSession = RideTripSession(rideId: rideId)..start();
+    _tripSub = _tripSession!.snapshots.listen((snapshot) {
+      if (!mounted || _hasNavigated) {
+        return;
+      }
+      setState(() {
+        _driverLatLng = snapshot.driverLatLng;
+        _driverHeading = snapshot.driverHeading;
+      });
+      navigateForRideSnapshot(
+        context: context,
+        screenStatus: RideStatus.inProgress,
+        snapshot: snapshot,
+        queryParameters: _flowQuery,
+      );
+      if (shouldNavigateForStatus(
+        currentScreen: RideStatus.inProgress,
+        fromFirestore: snapshot.ride.status,
+      )) {
+        _hasNavigated = true;
+      }
+    });
   }
 
   @override
@@ -1228,7 +1698,11 @@ class _DrivingToDestinationScreenState
     if (widget.initialDestinationLatLng != oldWidget.initialDestinationLatLng) {
       _destinationLatLng = widget.initialDestinationLatLng;
     }
-    if (widget.autoCompleteTrip &&
+    if (widget.rideId != oldWidget.rideId) {
+      unawaited(_disposeTrip());
+      _bindTripOrDemoTimer();
+    } else if ((widget.rideId == null || widget.rideId!.isEmpty) &&
+        widget.autoCompleteTrip &&
         (widget.initialPickupLocation != oldWidget.initialPickupLocation ||
             widget.initialDestination != oldWidget.initialDestination ||
             widget.paymentMethod != oldWidget.paymentMethod ||
@@ -1238,9 +1712,17 @@ class _DrivingToDestinationScreenState
     }
   }
 
+  Future<void> _disposeTrip() async {
+    await _tripSub?.cancel();
+    _tripSub = null;
+    await _tripSession?.dispose();
+    _tripSession = null;
+  }
+
   @override
   void dispose() {
     _rideSuccessTimer?.cancel();
+    unawaited(_disposeTrip());
     super.dispose();
   }
 
@@ -1253,20 +1735,28 @@ class _DrivingToDestinationScreenState
   }
 
   void _startRideSuccessTimer() {
+    if (widget.rideId != null && widget.rideId!.trim().isNotEmpty) {
+      return;
+    }
     _rideSuccessTimer?.cancel();
     _rideSuccessTimer = Timer(_drivingToRideSuccessDelay, _showRideSuccess);
   }
 
   void _showRideSuccess() {
-    if (!mounted) {
+    if (!mounted || _hasNavigated) {
       return;
     }
+    _hasNavigated = true;
 
     final rideSuccessUri = Uri(
       path: '/ride-success',
       queryParameters: {
         'ride': widget.rideType,
         'payment': widget.paymentMethod,
+        if (widget.estimatedFare != null)
+          'fare': widget.estimatedFare!.round().toString(),
+        if (widget.rideId != null && widget.rideId!.trim().isNotEmpty)
+          'rideId': widget.rideId!.trim(),
       },
     );
     context.go(rideSuccessUri.toString());
@@ -1330,7 +1820,9 @@ class _DrivingToDestinationScreenState
                     pickupLatLng: _pickupLatLng,
                     destinationLatLng: _destinationLatLng,
                     routeSemanticsLabel: 'Driving to destination map image',
-                    vehicleProgress: 0.46,
+                    vehicleProgress: _driverLatLng == null ? 0.46 : null,
+                    driverLatLng: _driverLatLng,
+                    driverHeading: _driverHeading,
                     vehicleAsset: 'assets/images/Car img - select ride.svg',
                     vehicleWidth: 58,
                     vehicleHeight: 34,
@@ -1370,6 +1862,7 @@ class _DrivingToDestinationScreenState
 class _RideArrivalPanel extends StatelessWidget {
   const _RideArrivalPanel({
     required this.remainingWaitSeconds,
+    required this.overtimeWaitSeconds,
     required this.waitTimeLabel,
     required this.onNotesTap,
     required this.onCallTap,
@@ -1377,12 +1870,25 @@ class _RideArrivalPanel extends StatelessWidget {
   });
 
   final int remainingWaitSeconds;
+  final int overtimeWaitSeconds;
   final String waitTimeLabel;
   final VoidCallback onNotesTap;
   final VoidCallback onCallTap;
   final VoidCallback onShareTap;
 
   bool get _isFeeDue => remainingWaitSeconds <= 0;
+
+  String get _waitingFeeLabel {
+    final waited = Duration(
+      minutes: CitirideFareRates.waitingGraceMinutes,
+      seconds: overtimeWaitSeconds,
+    );
+    final fare = CitirideFareCalculator.waitingFareFor(waited);
+    if (fare <= 0) {
+      return 'Waiting fee \u20A6${CitirideFareRates.waitingPerMinute.round()}/min applies';
+    }
+    return 'Waiting fee ${formatNaira(fare)} applies';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1418,6 +1924,7 @@ class _RideArrivalPanel extends StatelessWidget {
           _RideArrivalWaitStatus(
             isFeeDue: _isFeeDue,
             waitTimeLabel: waitTimeLabel,
+            waitingFeeLabel: _waitingFeeLabel,
           ),
           const SizedBox(height: 16),
           const _ArrivingDriverInfo(leadingInset: 8),
@@ -1441,21 +1948,23 @@ class _RideArrivalWaitStatus extends StatelessWidget {
   const _RideArrivalWaitStatus({
     required this.isFeeDue,
     required this.waitTimeLabel,
+    required this.waitingFeeLabel,
   });
 
   final bool isFeeDue;
   final String waitTimeLabel;
+  final String waitingFeeLabel;
 
   @override
   Widget build(BuildContext context) {
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 180),
       child: isFeeDue
-          ? const Text(
-              'Waiting fee \u20A6350 applies',
-              key: ValueKey('waiting-fee-due'),
+          ? Text(
+              waitingFeeLabel,
+              key: const ValueKey('waiting-fee-due'),
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: const TextStyle(
                 color: Color(0xFFFF3838),
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
@@ -1657,6 +2166,8 @@ class _ArrivingPanel extends StatefulWidget {
     required this.pickupLocation,
     required this.destination,
     required this.sheetStage,
+    required this.paymentMethod,
+    required this.fareLabel,
     required this.onAdvance,
     required this.onRetreat,
     required this.onEditPickup,
@@ -1669,6 +2180,8 @@ class _ArrivingPanel extends StatefulWidget {
   final String pickupLocation;
   final String destination;
   final _ArrivingSheetStage sheetStage;
+  final String paymentMethod;
+  final String fareLabel;
   final VoidCallback onAdvance;
   final VoidCallback onRetreat;
   final VoidCallback onEditPickup;
@@ -1774,6 +2287,8 @@ class _ArrivingPanelState extends State<_ArrivingPanel> {
                         pickupLocation: _displayPickup,
                         destination: _displayDestination,
                         showFullDetails: _isFullyExpanded,
+                        paymentMethod: widget.paymentMethod,
+                        fareLabel: widget.fareLabel,
                         onEditPickup: widget.onEditPickup,
                         onEditRoute: widget.onEditRoute,
                         onNotesTap: widget.onNotesTap,
@@ -1860,6 +2375,8 @@ class _ArrivingExpandedContent extends StatelessWidget {
     required this.pickupLocation,
     required this.destination,
     required this.showFullDetails,
+    required this.paymentMethod,
+    required this.fareLabel,
     required this.onEditPickup,
     required this.onEditRoute,
     required this.onNotesTap,
@@ -1870,6 +2387,8 @@ class _ArrivingExpandedContent extends StatelessWidget {
   final String pickupLocation;
   final String destination;
   final bool showFullDetails;
+  final String paymentMethod;
+  final String fareLabel;
   final VoidCallback onEditPickup;
   final VoidCallback onEditRoute;
   final VoidCallback onNotesTap;
@@ -1941,7 +2460,10 @@ class _ArrivingExpandedContent extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
-          const _PaymentMethodSummary(),
+          _PaymentMethodSummary(
+            paymentMethod: paymentMethod,
+            fareLabel: fareLabel,
+          ),
           if (showFullDetails) ...[
             const SizedBox(height: 30),
             const Text(
@@ -2138,6 +2660,8 @@ class _DriverFlowMap extends StatefulWidget {
     required this.routeSemanticsLabel,
     this.showNearbyCars = false,
     this.vehicleProgress,
+    this.driverLatLng,
+    this.driverHeading,
     this.vehicleAsset = 'assets/images/Car img - select ride.svg',
     this.vehicleWidth = 58,
     this.vehicleHeight = 34,
@@ -2148,6 +2672,8 @@ class _DriverFlowMap extends StatefulWidget {
   final String routeSemanticsLabel;
   final bool showNearbyCars;
   final double? vehicleProgress;
+  final LatLng? driverLatLng;
+  final double? driverHeading;
   final String vehicleAsset;
   final double vehicleWidth;
   final double vehicleHeight;
@@ -2227,13 +2753,17 @@ class _DriverFlowMapState extends State<_DriverFlowMap> {
           fallbackSemanticsLabel: 'Driver flow map background',
           routeSemanticsLabel: widget.routeSemanticsLabel,
           route: _route,
-          showCars: widget.showNearbyCars,
+          showCars: widget.showNearbyCars && widget.driverLatLng == null,
           showPickupPulse: true,
-          vehicleProgress: widget.vehicleProgress,
+          vehicleProgress:
+              widget.driverLatLng == null ? widget.vehicleProgress : null,
+          vehiclePosition: widget.driverLatLng,
+          vehicleHeading: widget.driverHeading,
           vehicleMarkerAsset: widget.vehicleAsset,
           vehicleMarkerWidth: widget.vehicleWidth,
           vehicleMarkerHeight: widget.vehicleHeight,
           cameraBoundsPadding: 132,
+          fitRouteInView: widget.driverLatLng == null,
         ),
         if (_isLoadingRoute)
           Positioned(
@@ -2493,10 +3023,12 @@ class _LookingForDriverPanel extends StatelessWidget {
   const _LookingForDriverPanel({
     required this.onEditPickup,
     required this.onCancelRide,
+    this.statusMessage = 'Looking for a driver nearby',
   });
 
   final VoidCallback onEditPickup;
   final VoidCallback onCancelRide;
+  final String statusMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -2534,10 +3066,10 @@ class _LookingForDriverPanel extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 9),
-          const Text(
-            'Looking for a driver nearby',
+          Text(
+            statusMessage,
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               color: Color(0xFF8F8F8F),
               fontSize: 13,
               fontWeight: FontWeight.w400,
@@ -2568,6 +3100,8 @@ class _DriverFoundPanel extends StatelessWidget {
     required this.destination,
     required this.showDestinationChangeNotice,
     required this.isExpanded,
+    required this.paymentMethod,
+    required this.fareLabel,
     required this.onExpand,
     required this.onCollapse,
     required this.onEditPickup,
@@ -2580,6 +3114,8 @@ class _DriverFoundPanel extends StatelessWidget {
   final String destination;
   final bool showDestinationChangeNotice;
   final bool isExpanded;
+  final String paymentMethod;
+  final String fareLabel;
   final VoidCallback onExpand;
   final VoidCallback onCollapse;
   final VoidCallback onEditPickup;
@@ -2639,6 +3175,8 @@ class _DriverFoundPanel extends StatelessWidget {
                   pickupLocation: _displayPickup,
                   destination: _displayDestination,
                   showDestinationChangeNotice: showDestinationChangeNotice,
+                  paymentMethod: paymentMethod,
+                  fareLabel: fareLabel,
                   onEditPickup: onEditPickup,
                   onEditRoute: onEditRoute,
                   onNotesTap: onNotesTap,
@@ -2728,6 +3266,8 @@ class _ExpandedDriverFoundContent extends StatelessWidget {
     required this.pickupLocation,
     required this.destination,
     required this.showDestinationChangeNotice,
+    required this.paymentMethod,
+    required this.fareLabel,
     required this.onEditPickup,
     required this.onEditRoute,
     required this.onNotesTap,
@@ -2737,6 +3277,8 @@ class _ExpandedDriverFoundContent extends StatelessWidget {
   final String pickupLocation;
   final String destination;
   final bool showDestinationChangeNotice;
+  final String paymentMethod;
+  final String fareLabel;
   final VoidCallback onEditPickup;
   final VoidCallback onEditRoute;
   final VoidCallback onNotesTap;
@@ -2828,7 +3370,10 @@ class _ExpandedDriverFoundContent extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
-          const _PaymentMethodSummary(),
+          _PaymentMethodSummary(
+            paymentMethod: paymentMethod,
+            fareLabel: fareLabel,
+          ),
         ],
       ),
     );
@@ -4011,24 +4556,36 @@ class _EditDestinationsRow extends StatelessWidget {
 }
 
 class _PaymentMethodSummary extends StatelessWidget {
-  const _PaymentMethodSummary();
+  const _PaymentMethodSummary({
+    required this.paymentMethod,
+    required this.fareLabel,
+  });
+
+  final String paymentMethod;
+  final String fareLabel;
 
   @override
   Widget build(BuildContext context) {
-    return const Row(
+    final isWallet = paymentMethod.trim().toLowerCase() == 'wallet';
+    final title = isWallet ? 'CitiRide Wallet' : 'Cash';
+    final iconAsset = isWallet
+        ? 'assets/images/wallet icon.svg'
+        : 'assets/images/cash icon.svg';
+
+    return Row(
       children: [
         CompatibleSvgPicture.asset(
-          'assets/images/cash icon.svg',
+          iconAsset,
           width: 24,
           height: 24,
           fit: BoxFit.contain,
-          semanticsLabel: 'Cash payment icon',
+          semanticsLabel: '$title payment icon',
         ),
-        SizedBox(width: 12),
+        const SizedBox(width: 12),
         Expanded(
           child: Text(
-            'Cash',
-            style: TextStyle(
+            title,
+            style: const TextStyle(
               color: AppColors.white,
               fontSize: 13,
               fontWeight: FontWeight.w500,
@@ -4038,8 +4595,8 @@ class _PaymentMethodSummary extends StatelessWidget {
           ),
         ),
         Text(
-          '\u20A63,500',
-          style: TextStyle(
+          fareLabel,
+          style: const TextStyle(
             color: AppColors.white,
             fontSize: 13,
             fontWeight: FontWeight.w600,

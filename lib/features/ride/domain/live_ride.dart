@@ -1,0 +1,267 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import '../../../core/location/citiride_fare.dart';
+import '../../../core/location/citiride_route.dart';
+
+/// Shared live-ride contract with the driver app (`firebase/types.ts`).
+///
+/// Firestore field names stay snake_case for status (`in_progress`, etc.).
+/// Timestamps use [FieldValue.serverTimestamp] on write and [Timestamp] on read.
+
+enum RideStatus {
+  requested,
+  accepted,
+  arriving,
+  waiting,
+  inProgress,
+  confirmFare,
+  completed,
+  cancelled;
+
+  String toFirestore() {
+    return switch (this) {
+      RideStatus.requested => 'requested',
+      RideStatus.accepted => 'accepted',
+      RideStatus.arriving => 'arriving',
+      RideStatus.waiting => 'waiting',
+      RideStatus.inProgress => 'in_progress',
+      RideStatus.confirmFare => 'confirm_fare',
+      RideStatus.completed => 'completed',
+      RideStatus.cancelled => 'cancelled',
+    };
+  }
+
+  static RideStatus fromFirestore(String? value) {
+    return switch (value) {
+      'requested' => RideStatus.requested,
+      'accepted' => RideStatus.accepted,
+      'arriving' => RideStatus.arriving,
+      'waiting' => RideStatus.waiting,
+      'in_progress' => RideStatus.inProgress,
+      'confirm_fare' => RideStatus.confirmFare,
+      'completed' => RideStatus.completed,
+      'cancelled' => RideStatus.cancelled,
+      _ => RideStatus.requested,
+    };
+  }
+
+  bool get isTerminal =>
+      this == RideStatus.completed || this == RideStatus.cancelled;
+
+  bool get hasDriverAssigned =>
+      this == RideStatus.accepted ||
+      this == RideStatus.arriving ||
+      this == RideStatus.waiting ||
+      this == RideStatus.inProgress ||
+      this == RideStatus.confirmFare;
+}
+
+class RideLatLng {
+  const RideLatLng({
+    required this.lat,
+    required this.lng,
+    required this.address,
+  });
+
+  final double lat;
+  final double lng;
+  final String address;
+
+  Map<String, Object?> toMap() {
+    return {
+      'lat': lat,
+      'lng': lng,
+      'address': address,
+      // Driver matching / Cloud Functions / map UI use these keys.
+      'latitude': lat,
+      'longitude': lng,
+      'name': address,
+    };
+  }
+
+  factory RideLatLng.fromMap(Map<String, dynamic>? map, {String fallback = ''}) {
+    final address = (map?['address'] as String?)?.trim();
+    final name = (map?['name'] as String?)?.trim();
+    return RideLatLng(
+      lat:
+          (map?['lat'] as num?)?.toDouble() ??
+          (map?['latitude'] as num?)?.toDouble() ??
+          0,
+      lng:
+          (map?['lng'] as num?)?.toDouble() ??
+          (map?['longitude'] as num?)?.toDouble() ??
+          0,
+      address: (address != null && address.isNotEmpty)
+          ? address
+          : (name != null && name.isNotEmpty)
+          ? name
+          : fallback,
+    );
+  }
+}
+
+class RideFare {
+  const RideFare({required this.estimated, this.finalFare});
+
+  final double estimated;
+  final double? finalFare;
+
+  Map<String, Object?> toMap() {
+    return {'estimated': estimated, 'final': finalFare};
+  }
+
+  factory RideFare.fromMap(Map<String, dynamic>? map) {
+    return RideFare(
+      estimated: (map?['estimated'] as num?)?.toDouble() ?? 0,
+      finalFare: (map?['final'] as num?)?.toDouble(),
+    );
+  }
+}
+
+class LiveRide {
+  const LiveRide({
+    required this.id,
+    required this.riderId,
+    required this.status,
+    required this.pickup,
+    required this.destination,
+    required this.fare,
+    this.driverId,
+    this.driverLocation,
+    this.rideType = 'regular',
+    this.paymentMethod = 'cash',
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  final String id;
+  final String riderId;
+  final String? driverId;
+  final RideStatus status;
+  final RideLatLng pickup;
+  final RideLatLng destination;
+  final RideFare fare;
+  final DriverLocation? driverLocation;
+  final String rideType;
+  final String paymentMethod;
+  final Timestamp? createdAt;
+  final Timestamp? updatedAt;
+
+  factory LiveRide.fromMap(String id, Map<String, dynamic> data) {
+    final rawDriverLocation = data['driverLocation'];
+    return LiveRide(
+      id: id,
+      riderId: (data['riderId'] as String?)?.trim() ?? '',
+      driverId: (data['driverId'] as String?)?.trim(),
+      status: RideStatus.fromFirestore(data['status'] as String?),
+      pickup: RideLatLng.fromMap(
+        data['pickup'] as Map<String, dynamic>?,
+        fallback: 'Pickup',
+      ),
+      destination: RideLatLng.fromMap(
+        data['destination'] as Map<String, dynamic>?,
+        fallback: 'Destination',
+      ),
+      fare: RideFare.fromMap(data['fare'] as Map<String, dynamic>?),
+      driverLocation: rawDriverLocation is Map
+          ? DriverLocation.fromMap(rawDriverLocation)
+          : null,
+      rideType: (data['rideType'] as String?)?.trim().isNotEmpty == true
+          ? (data['rideType'] as String).trim()
+          : 'regular',
+      paymentMethod:
+          (data['paymentMethod'] as String?)?.trim().isNotEmpty == true
+          ? (data['paymentMethod'] as String).trim()
+          : 'cash',
+      createdAt: data['createdAt'] as Timestamp?,
+      updatedAt: data['updatedAt'] as Timestamp?,
+    );
+  }
+}
+
+class DriverLocation {
+  const DriverLocation({
+    required this.lat,
+    required this.lng,
+    required this.heading,
+    this.updatedAt,
+  });
+
+  final double lat;
+  final double lng;
+  final double heading;
+  final Timestamp? updatedAt;
+
+  factory DriverLocation.fromMap(Map<dynamic, dynamic> data) {
+    return DriverLocation(
+      lat:
+          (data['lat'] as num?)?.toDouble() ??
+          (data['latitude'] as num?)?.toDouble() ??
+          0,
+      lng:
+          (data['lng'] as num?)?.toDouble() ??
+          (data['longitude'] as num?)?.toDouble() ??
+          0,
+      heading: (data['heading'] as num?)?.toDouble() ?? 0,
+      updatedAt: data['updatedAt'] is Timestamp
+          ? data['updatedAt'] as Timestamp
+          : null,
+    );
+  }
+}
+
+/// Payload for creating a new ride request (rider → Firestore).
+class NewRideRequest {
+  const NewRideRequest({
+    required this.riderId,
+    required this.pickup,
+    required this.destination,
+    required this.estimatedFare,
+    this.rideType = 'regular',
+    this.paymentMethod = 'cash',
+  });
+
+  final String riderId;
+  final RideLatLng pickup;
+  final RideLatLng destination;
+  final double estimatedFare;
+  final String rideType;
+  final String paymentMethod;
+}
+
+/// Write map for a new ride. Always stamps server timestamps.
+Map<String, Object?> newRideWriteMap(NewRideRequest request) {
+  return {
+    'riderId': request.riderId,
+    'driverId': null,
+    'status': RideStatus.requested.toFirestore(),
+    'pickup': request.pickup.toMap(),
+    'destination': request.destination.toMap(),
+    'fare': {'estimated': request.estimatedFare, 'final': null},
+    'rideType': request.rideType,
+    'paymentMethod': request.paymentMethod,
+    'createdAt': FieldValue.serverTimestamp(),
+    'updatedAt': FieldValue.serverTimestamp(),
+  };
+}
+
+Map<String, Object?> rideStatusUpdateMap(RideStatus status, {String? driverId}) {
+  return {
+    'status': status.toFirestore(),
+    'driverId': ?driverId,
+    'updatedAt': FieldValue.serverTimestamp(),
+  };
+}
+
+/// Same rider document id scheme used by [CitirideAuthService] (`riders/{id}`).
+String riderIdFromEmail(String email) {
+  return email.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9@._+-]'), '_');
+}
+
+double estimatedFareForRideType(String rideType, {CitirideRoute? route}) {
+  final tier = CitirideFareRates.tierFromRideType(rideType);
+  if (route != null) {
+    return CitirideFareCalculator.quote(tier: tier, route: route).estimatedTotal;
+  }
+  return CitirideFareCalculator.fallback(tier).estimatedTotal;
+}

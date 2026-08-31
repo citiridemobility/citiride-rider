@@ -9,10 +9,13 @@ import { Resend } from 'resend';
 import {
   otpEmailHtml,
   otpEmailText,
+  driverWelcomeEmailHtml,
+  driverWelcomeEmailText,
   riderWelcomeEmailHtml,
   riderWelcomeEmailText,
 } from './emails/templates.js';
 import {
+  createDriverCustomToken,
   createRiderCustomToken,
   hasFirebaseAdmin,
 } from './firebase-admin.js';
@@ -42,6 +45,8 @@ const otpStore = new Map();
 /** Avoid spamming welcome mail on repeated logins in a short window. */
 /** @type {Map<string, number>} email -> last successful welcome send (ms) */
 const welcomeSentAt = new Map();
+/** @type {Map<string, number>} driver email -> last successful driver welcome send (ms) */
+const driverWelcomeSentAt = new Map();
 const welcomeCooldownMs = Number(
   process.env.OTP_WELCOME_COOLDOWN_MS || 24 * 60 * 60 * 1000,
 );
@@ -240,6 +245,180 @@ app.post('/v1/otp/verify', async (req, res) => {
   }
 });
 
+/** Driver app (React Native): send OTP scoped to driver login. */
+app.post('/v1/driver/otp/send', async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    const purpose = 'driver_login';
+
+    if (!email) {
+      return res.status(400).json({
+        error: 'invalid_email',
+        message: 'Enter a valid email address.',
+      });
+    }
+
+    const key = storeKey(email, purpose);
+    const existing = otpStore.get(key);
+    const now = Date.now();
+
+    if (existing && now - existing.lastSentAt < resendCooldownMs) {
+      const retryAfterMs = resendCooldownMs - (now - existing.lastSentAt);
+      return res.status(429).json({
+        error: 'cooldown',
+        message: 'Please wait a moment before requesting another code.',
+        retryAfterMs,
+      });
+    }
+
+    const code = demoMode ? demoCode : generateOtp();
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hash = hashOtp(code, salt);
+
+    otpStore.set(key, {
+      hash,
+      salt,
+      expiresAt: now + otpTtlMs,
+      attempts: 0,
+      lastSentAt: now,
+    });
+
+    if (!demoMode) {
+      if (!resend) {
+        return res.status(500).json({
+          error: 'misconfigured',
+          message: 'RESEND_API_KEY is not configured.',
+        });
+      }
+
+      const ttlMinutes = Math.round(otpTtlMs / 60000);
+      const { error } = await resend.emails.send({
+        from: fromEmail,
+        to: [email],
+        subject: 'Your CitiRide driver one-time password',
+        html: otpEmailHtml({ code, purpose: 'login', ttlMinutes }),
+        text: otpEmailText({ code, purpose: 'login', ttlMinutes }),
+      });
+
+      if (error) {
+        otpStore.delete(key);
+        return res.status(502).json({
+          error: 'send_failed',
+          message: error.message || 'Unable to send verification email.',
+        });
+      }
+    }
+
+    return res.json({
+      ok: true,
+      email,
+      purpose: 'driver_login',
+      role: 'driver',
+      expiresInMs: otpTtlMs,
+      demoMode,
+      ...(demoMode ? { demoCode } : {}),
+    });
+  } catch (error) {
+    console.error('driver send otp failed', error);
+    return res.status(500).json({
+      error: 'server_error',
+      message: 'Unable to send verification code. Please try again.',
+    });
+  }
+});
+
+/** Driver app (React Native): verify OTP and mint Firebase custom token. */
+app.post('/v1/driver/otp/verify', async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    const purpose = 'driver_login';
+    const code = String(req.body?.code || '').trim();
+
+    if (!email) {
+      return res.status(400).json({
+        error: 'invalid_email',
+        message: 'Enter a valid email address.',
+      });
+    }
+
+    if (!/^\d{6}$/.test(code)) {
+      return res.status(400).json({
+        error: 'invalid_code_format',
+        message: 'Enter the 6-digit verification code.',
+      });
+    }
+
+    const key = storeKey(email, purpose);
+    const record = otpStore.get(key);
+
+    if (!record) {
+      return res.status(400).json({
+        error: 'invalid-verification-code',
+        message: 'Incorrect code',
+      });
+    }
+
+    if (Date.now() > record.expiresAt) {
+      otpStore.delete(key);
+      return res.status(400).json({
+        error: 'session-expired',
+        message: 'Verification session expired. Please request a new code.',
+      });
+    }
+
+    if (record.attempts >= maxAttempts) {
+      otpStore.delete(key);
+      return res.status(429).json({
+        error: 'too-many-attempts',
+        message: 'Too many incorrect attempts. Please request a new code.',
+      });
+    }
+
+    const incomingHash = hashOtp(code, record.salt);
+    if (incomingHash !== record.hash) {
+      record.attempts += 1;
+      otpStore.set(key, record);
+      return res.status(400).json({
+        error: 'invalid-verification-code',
+        message: 'Incorrect code',
+      });
+    }
+
+    otpStore.delete(key);
+
+    const welcomeEmail = await sendDriverWelcomeEmail(email);
+
+    let firebaseCustomToken = null;
+    let driverId = null;
+    try {
+      const minted = await createDriverCustomToken(email);
+      if (minted) {
+        firebaseCustomToken = minted.token;
+        driverId = minted.uid;
+      }
+    } catch (tokenError) {
+      console.error('driver custom token failed', tokenError);
+    }
+
+    return res.json({
+      ok: true,
+      email,
+      purpose: 'driver_login',
+      role: 'driver',
+      verified: true,
+      driverId,
+      welcomeEmail,
+      ...(firebaseCustomToken ? { firebaseCustomToken } : {}),
+    });
+  } catch (error) {
+    console.error('driver verify otp failed', error);
+    return res.status(500).json({
+      error: 'server_error',
+      message: 'Unable to verify code. Please try again.',
+    });
+  }
+});
+
 app.listen(port, () => {
   console.log(
     `CitiRide OTP API listening on :${port} (demoMode=${demoMode}, hasResendKey=${Boolean(resendApiKey)}, hasFirebaseAdmin=${hasFirebaseAdmin()})`,
@@ -250,16 +429,44 @@ app.listen(port, () => {
  * @returns {Promise<'sent' | 'skipped' | 'failed'>}
  */
 async function sendRiderWelcomeEmail(email) {
+  return sendWelcomeEmail({
+    email,
+    sentAtMap: welcomeSentAt,
+    subject: 'Welcome to CitiRide',
+    html: riderWelcomeEmailHtml({ email }),
+    text: riderWelcomeEmailText({ email }),
+    logLabel: 'rider welcome email',
+  });
+}
+
+/**
+ * @returns {Promise<'sent' | 'skipped' | 'failed'>}
+ */
+async function sendDriverWelcomeEmail(email) {
+  return sendWelcomeEmail({
+    email,
+    sentAtMap: driverWelcomeSentAt,
+    subject: 'Welcome to CitiRide Driver',
+    html: driverWelcomeEmailHtml({ email }),
+    text: driverWelcomeEmailText({ email }),
+    logLabel: 'driver welcome email',
+  });
+}
+
+/**
+ * @returns {Promise<'sent' | 'skipped' | 'failed'>}
+ */
+async function sendWelcomeEmail({ email, sentAtMap, subject, html, text, logLabel }) {
   // Welcome mail needs Resend. Do not tie it to OTP demoMode — demoMode only
   // controls whether the 6-digit code is emailed.
   if (!resend) {
-    console.warn('welcome email skipped: Resend is not configured');
+    console.warn(`${logLabel} skipped: Resend is not configured`);
     return 'skipped';
   }
 
-  const lastSentAt = welcomeSentAt.get(email) || 0;
+  const lastSentAt = sentAtMap.get(email) || 0;
   if (Date.now() - lastSentAt < welcomeCooldownMs) {
-    console.info('welcome email skipped: cooldown', email);
+    console.info(`${logLabel} skipped: cooldown`, email);
     return 'skipped';
   }
 
@@ -267,21 +474,21 @@ async function sendRiderWelcomeEmail(email) {
     const { error } = await resend.emails.send({
       from: fromEmail,
       to: [email],
-      subject: 'Welcome to CitiRide',
-      html: riderWelcomeEmailHtml({ email }),
-      text: riderWelcomeEmailText({ email }),
+      subject,
+      html,
+      text,
     });
 
     if (error) {
-      console.error('welcome email failed', error);
+      console.error(`${logLabel} failed`, error);
       return 'failed';
     }
 
-    welcomeSentAt.set(email, Date.now());
-    console.info('welcome email sent', email);
+    sentAtMap.set(email, Date.now());
+    console.info(`${logLabel} sent`, email);
     return 'sent';
   } catch (error) {
-    console.error('welcome email failed', error);
+    console.error(`${logLabel} failed`, error);
     return 'failed';
   }
 }

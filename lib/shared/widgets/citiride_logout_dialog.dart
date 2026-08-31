@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/theme/app_colors.dart';
+import '../../core/auth/citiride_auth_service.dart';
 import '../../core/session/citiride_session_store.dart';
 import '../../features/wallet/presentation/wallet_enrollment_store.dart';
 import '../../features/wallet/presentation/wallet_transaction_pin_store.dart';
@@ -32,6 +33,7 @@ Future<void> showCitirideLogoutDialog(BuildContext context) {
               onCancel: () => Navigator.of(dialogContext).pop(),
               onConfirm: () async {
                 Navigator.of(dialogContext).pop();
+                await CitirideAuthService().signOut();
                 await const CitirideSessionStore().clearAuth();
                 await WalletEnrollmentStore.instance.clear();
                 await WalletTransactionPinStore.instance.clear();

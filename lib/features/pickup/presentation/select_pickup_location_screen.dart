@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../../app/theme/app_colors.dart';
+import '../../../core/location/citiride_fare.dart';
 import '../../../core/location/citiride_place.dart';
 import '../../../core/location/citiride_route.dart';
 import '../../../core/location/citiride_route_service.dart';
@@ -154,7 +155,11 @@ class _SelectPickupLocationScreenState
 
   bool get _isVip => widget.rideType == 'vip';
   String get _rideLabel => _isVip ? 'Modern Car Models' : 'Mid-size Car';
-  String get _ridePrice => _isVip ? '\u20A67,500' : '\u20A63,500';
+  String get _ridePrice => fareLabelForRoute(
+    tier: _isVip ? CitirideRideTier.vip : CitirideRideTier.regular,
+    route: _route,
+    isLoadingRoute: _isLoadingRoute,
+  );
 
   void _close() {
     if (context.canPop()) {
@@ -267,6 +272,10 @@ class _SelectPickupLocationScreenState
   }
 
   void _confirmOrder() {
+    final tier = CitirideFareRates.tierFromRideType(widget.rideType);
+    final estimated = _route == null
+        ? null
+        : CitirideFareCalculator.quote(tier: tier, route: _route!).estimatedTotal;
     final lookingUri = Uri(
       path: '/looking-for-driver',
       queryParameters: {
@@ -276,6 +285,7 @@ class _SelectPickupLocationScreenState
         'destination': widget.initialDestination,
         ...latLngToQuery('pickup', _pickupLatLng),
         ...latLngToQuery('destination', _destinationLatLng),
+        if (estimated != null) 'fare': estimated.round().toString(),
       },
     );
     context.push(lookingUri.toString());
