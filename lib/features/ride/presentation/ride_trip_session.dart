@@ -119,6 +119,19 @@ String? routePathForRideStatus(RideStatus status) {
   };
 }
 
+int rideStatusRank(RideStatus status) {
+  return switch (status) {
+    RideStatus.requested => 0,
+    RideStatus.accepted => 1,
+    RideStatus.arriving => 2,
+    RideStatus.waiting => 3,
+    RideStatus.inProgress => 4,
+    RideStatus.confirmFare => 5,
+    RideStatus.completed => 6,
+    RideStatus.cancelled => -1,
+  };
+}
+
 bool shouldNavigateForStatus({
   required RideStatus currentScreen,
   required RideStatus fromFirestore,
@@ -126,9 +139,16 @@ bool shouldNavigateForStatus({
   if (fromFirestore == RideStatus.cancelled) {
     return true;
   }
-  final currentPath = routePathForRideStatus(currentScreen);
-  final nextPath = routePathForRideStatus(fromFirestore);
-  return currentPath != null && nextPath != null && currentPath != nextPath;
+  // Never bounce back to looking-for-driver; that remounts matching and
+  // creates duplicate ride requests.
+  if (fromFirestore == RideStatus.requested) {
+    return false;
+  }
+  if (currentScreen == RideStatus.inProgress) {
+    return fromFirestore == RideStatus.confirmFare ||
+        fromFirestore == RideStatus.completed;
+  }
+  return rideStatusRank(fromFirestore) > rideStatusRank(currentScreen);
 }
 
 /// Navigate when Firestore status moves past the screen this UI represents.

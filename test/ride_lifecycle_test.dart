@@ -55,6 +55,7 @@ void main() {
               initialDestination:
                   state.uri.queryParameters['destination'] ??
                   'Ring Road Bus Terminal',
+              autoCompleteTrip: true,
             );
           },
         ),

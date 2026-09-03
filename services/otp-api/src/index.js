@@ -386,8 +386,6 @@ app.post('/v1/driver/otp/verify', async (req, res) => {
 
     otpStore.delete(key);
 
-    const welcomeEmail = await sendDriverWelcomeEmail(email);
-
     let firebaseCustomToken = null;
     let driverId = null;
     try {
@@ -399,6 +397,8 @@ app.post('/v1/driver/otp/verify', async (req, res) => {
     } catch (tokenError) {
       console.error('driver custom token failed', tokenError);
     }
+
+    const welcomeEmail = await sendDriverWelcomeEmail(email);
 
     return res.json({
       ok: true,

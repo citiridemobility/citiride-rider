@@ -16,6 +16,7 @@ import '../../../core/location/places_service.dart';
 import '../../../core/location/route_query.dart';
 import '../../../shared/widgets/citiride_live_route_map.dart';
 import '../../../shared/widgets/citiride_location_status_pulse.dart';
+import '../../../shared/widgets/citiride_slide_button.dart';
 import '../../../shared/widgets/compatible_svg_picture.dart';
 import '../../../shared/widgets/location_search_empty_state.dart';
 
@@ -810,26 +811,10 @@ class _PickupLocationPanel extends StatelessWidget {
             ],
           ),
           const Spacer(),
-          SizedBox(
-            width: double.infinity,
+          CitirideSlideButton(
+            label: 'Confirm Order',
             height: 49,
-            child: FilledButton(
-              onPressed: onConfirmOrder,
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.citirideYellow,
-                foregroundColor: AppColors.citirideBlack,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(25),
-                ),
-                textStyle: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  height: 1.2,
-                  letterSpacing: 0,
-                ),
-              ),
-              child: const Text('Confirm Order'),
-            ),
+            onConfirm: onConfirmOrder,
           ),
         ],
       ),

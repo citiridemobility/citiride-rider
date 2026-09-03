@@ -461,6 +461,7 @@ abstract final class AppRouter {
               initialEstimatedFare: parseEstimatedFareQuery(
                 state.uri.queryParameters['fare'],
               ),
+              existingRideId: state.uri.queryParameters['rideId'],
             );
           },
         ),
@@ -544,6 +545,8 @@ abstract final class AppRouter {
                 state.uri.queryParameters['fare'],
               ),
               rideId: state.uri.queryParameters['rideId'],
+              autoStartTrip:
+                  (state.uri.queryParameters['rideId'] ?? '').trim().isEmpty,
             );
           },
         ),
@@ -571,6 +574,8 @@ abstract final class AppRouter {
                 state.uri.queryParameters['fare'],
               ),
               rideId: state.uri.queryParameters['rideId'],
+              autoCompleteTrip:
+                  (state.uri.queryParameters['rideId'] ?? '').trim().isEmpty,
             );
           },
         ),

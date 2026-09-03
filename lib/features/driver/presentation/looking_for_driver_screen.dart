@@ -65,11 +65,12 @@ Map<String, String> _rideFlowQueryParameters({
 }
 
 Map<String, String> _optionalQueryParameter(String key, String? value) {
-  if (value == null) {
+  final trimmed = value?.trim();
+  if (trimmed == null || trimmed.isEmpty) {
     return const {};
   }
 
-  return {key: value};
+  return {key: trimmed};
 }
 
 String _normalizePickupLabel(String value) {
@@ -92,6 +93,7 @@ class LookingForDriverScreen extends StatefulWidget {
     this.initialPickupLatLng,
     this.initialDestinationLatLng,
     this.initialEstimatedFare,
+    this.existingRideId,
   });
 
   final String rideType;
@@ -101,6 +103,7 @@ class LookingForDriverScreen extends StatefulWidget {
   final LatLng? initialPickupLatLng;
   final LatLng? initialDestinationLatLng;
   final double? initialEstimatedFare;
+  final String? existingRideId;
 
   @override
   State<LookingForDriverScreen> createState() => _LookingForDriverScreenState();
@@ -179,6 +182,32 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
 
   Future<void> _startRideMatching() async {
     try {
+      final existingRideId = widget.existingRideId?.trim();
+      if (existingRideId != null && existingRideId.isNotEmpty) {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _rideId = existingRideId;
+          _isCreatingRequest = false;
+          _matchError = null;
+        });
+        await _rideSubscription?.cancel();
+        _rideSubscription = _rideRepository.watchRide(existingRideId).listen(
+          _handleRideUpdate,
+          onError: (Object error) {
+            debugPrint('Ride watch failed: $error');
+            if (!mounted) {
+              return;
+            }
+            setState(() {
+              _matchError = 'Lost connection to your ride request.';
+            });
+          },
+        );
+        return;
+      }
+
       final email = await _sessionStore.signedInEmail();
       if (!mounted) {
         return;
@@ -264,15 +293,22 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
       if (!mounted) {
         return;
       }
-      // Keep the screen usable offline / misconfigured Firebase.
       setState(() {
         _isCreatingRequest = false;
-        _matchError =
-            'Could not reach matching. Retrying with local demo shortly.';
+        _matchError = 'Could not reach matching. Retrying...';
       });
       debugPrint('Ride matching failed: $error');
       _driverFoundTimer?.cancel();
-      _driverFoundTimer = Timer(_driverFoundDelay, _showDriverFound);
+      _driverFoundTimer = Timer(_driverFoundDelay, () {
+        if (!mounted || _hasNavigatedToDriver || (_rideId?.isNotEmpty ?? false)) {
+          return;
+        }
+        setState(() {
+          _isCreatingRequest = true;
+          _matchError = null;
+        });
+        unawaited(_startRideMatching());
+      });
     }
   }
 
@@ -288,7 +324,7 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
       return;
     }
 
-    if (ride.status.hasDriverAssigned || ride.driverId?.isNotEmpty == true) {
+    if (ride.status.hasDriverAssigned) {
       if (ride.fare.estimated > 0) {
         _estimatedFare = ride.fare.estimated;
       }
@@ -1599,7 +1635,7 @@ class DrivingToDestinationScreen extends StatefulWidget {
     this.initialPickupLocation = 'Current Location',
     this.initialDestination = 'Ring Road Bus Terminal',
     this.paymentMethod = 'cash',
-    this.autoCompleteTrip = true,
+    this.autoCompleteTrip = false,
     this.initialPickupLatLng,
     this.initialDestinationLatLng,
     this.estimatedFare,

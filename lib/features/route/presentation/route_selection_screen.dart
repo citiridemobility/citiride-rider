@@ -13,6 +13,7 @@ import '../../../core/location/live_location_service.dart';
 import '../../../core/location/places_service.dart';
 import '../../../core/location/route_query.dart';
 import '../../../shared/widgets/citiride_google_map.dart';
+import '../../../shared/widgets/citiride_slide_button.dart';
 import '../../../shared/widgets/compatible_svg_picture.dart';
 import '../../../shared/widgets/location_search_empty_state.dart';
 
@@ -1356,35 +1357,10 @@ class _RequestRideButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FilledButton(
-      onPressed: isEnabled ? onPressed : null,
-      style: ButtonStyle(
-        minimumSize: WidgetStateProperty.all(const Size.fromHeight(52)),
-        shape: WidgetStateProperty.all(
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
-        ),
-        backgroundColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.disabled)) {
-            return const Color(0xFF3A3A3A);
-          }
-          return AppColors.citirideYellow;
-        }),
-        foregroundColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.disabled)) {
-            return const Color(0xFF8F8F8F);
-          }
-          return AppColors.citirideBlack;
-        }),
-        textStyle: WidgetStateProperty.all(
-          const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w800,
-            height: 1.2,
-            letterSpacing: 0,
-          ),
-        ),
-      ),
-      child: Text(label),
+    return CitirideSlideButton(
+      label: label,
+      enabled: isEnabled,
+      onConfirm: onPressed,
     );
   }
 }

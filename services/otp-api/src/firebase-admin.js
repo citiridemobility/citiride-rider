@@ -57,10 +57,14 @@ export function riderUidFromEmail(email) {
 /**
  * Stable Firebase Auth uid for a driver email.
  * Prefixed so the same person can hold separate rider + driver Auth accounts.
+ * Firebase custom-token UIDs may only contain [A-Za-z0-9._-].
  */
 export function driverUidFromEmail(email) {
-  const base = riderUidFromEmail(email);
-  return base ? `drv_${base}` : '';
+  const safe = String(email || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, '_');
+  return safe ? `drv_${safe}` : '';
 }
 
 /**

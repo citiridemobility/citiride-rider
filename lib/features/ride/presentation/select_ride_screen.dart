@@ -11,6 +11,7 @@ import '../../../core/location/citiride_route.dart';
 import '../../../core/location/citiride_route_service.dart';
 import '../../../core/location/route_query.dart';
 import '../../../shared/widgets/citiride_live_route_map.dart';
+import '../../../shared/widgets/citiride_slide_button.dart';
 import '../../../shared/widgets/compatible_svg_picture.dart';
 
 enum _RideOption { regular, vip }
@@ -836,26 +837,10 @@ class _ContinueButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
+    return CitirideSlideButton(
+      label: 'Continue',
       height: 49,
-      child: FilledButton(
-        onPressed: onPressed,
-        style: FilledButton.styleFrom(
-          backgroundColor: AppColors.citirideYellow,
-          foregroundColor: AppColors.citirideBlack,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(25),
-          ),
-          textStyle: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w800,
-            height: 1.2,
-            letterSpacing: 0,
-          ),
-        ),
-        child: const Text('Continue'),
-      ),
+      onConfirm: onPressed,
     );
   }
 }
