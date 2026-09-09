@@ -206,6 +206,140 @@ export function driverWelcomeEmailText({ email }) {
   ].join('\n');
 }
 
+export function riderWalletCreatedEmailHtml({ email }) {
+  const firstName = guessFirstName(email);
+
+  return emailShell({
+    preheader: 'Congratulations! Your CitiRide wallet is ready.',
+    title: firstName
+      ? `Congratulations, ${firstName}`
+      : 'Your wallet is ready',
+    bodyHtml: `
+      <p style="margin:0 0 22px;color:${brand.muted};font-size:15px;line-height:1.65;font-family:${brand.font};">
+        Your CitiRide wallet is set up. Use it to pay for rides quickly, keep your balance in one place, and withdraw when you need to.
+      </p>
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 24px;border-collapse:collapse;">
+        <tr>
+          <td style="padding:0 0 14px;">
+            <p style="margin:0;color:${brand.black};font-size:14px;font-weight:700;line-height:1.5;font-family:${brand.font};">
+              Pay for rides
+            </p>
+            <p style="margin:4px 0 0;color:${brand.soft};font-size:13px;line-height:1.5;font-family:${brand.font};">
+              Choose wallet at checkout for a faster payment experience.
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:14px 0;border-top:1px solid ${brand.border};">
+            <p style="margin:0;color:${brand.black};font-size:14px;font-weight:700;line-height:1.5;font-family:${brand.font};">
+              Add money anytime
+            </p>
+            <p style="margin:4px 0 0;color:${brand.soft};font-size:13px;line-height:1.5;font-family:${brand.font};">
+              Top up your balance from the wallet tab whenever you need more funds.
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:14px 0 0;border-top:1px solid ${brand.border};">
+            <p style="margin:0;color:${brand.black};font-size:14px;font-weight:700;line-height:1.5;font-family:${brand.font};">
+              Stay secure
+            </p>
+            <p style="margin:4px 0 0;color:${brand.soft};font-size:13px;line-height:1.5;font-family:${brand.font};">
+              Your passcode unlocks the wallet — never share it with anyone.
+            </p>
+          </td>
+        </tr>
+      </table>
+      <p style="margin:0;color:${brand.soft};font-size:13px;line-height:1.55;font-family:${brand.font};">
+        Open the CitiRide app to start using your wallet.<br/><br/>
+        — CitiRide
+      </p>
+    `,
+  });
+}
+
+export function riderWalletCreatedEmailText({ email }) {
+  const firstName = guessFirstName(email);
+  return [
+    firstName
+      ? `Congratulations, ${firstName}`
+      : 'Your CitiRide wallet is ready',
+    '',
+    'Your CitiRide wallet is set up. Use it to pay for rides quickly, keep your balance in one place, and withdraw when you need to.',
+    '',
+    'Open the CitiRide app to start using your wallet.',
+    '',
+    '— CitiRide',
+  ].join('\n');
+}
+
+export function driverWalletCreatedEmailHtml({ email }) {
+  const firstName = guessFirstName(email);
+
+  return emailShell({
+    preheader: 'Congratulations! Your CitiRide driver wallet is ready.',
+    title: firstName
+      ? `Congratulations, ${firstName}`
+      : 'Your driver wallet is ready',
+    bodyHtml: `
+      <p style="margin:0 0 22px;color:${brand.muted};font-size:15px;line-height:1.65;font-family:${brand.font};">
+        Your CitiRide driver wallet is set up. Receive ride earnings, track payouts, and withdraw funds securely from the app.
+      </p>
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 24px;border-collapse:collapse;">
+        <tr>
+          <td style="padding:0 0 14px;">
+            <p style="margin:0;color:${brand.black};font-size:14px;font-weight:700;line-height:1.5;font-family:${brand.font};">
+              Collect earnings
+            </p>
+            <p style="margin:4px 0 0;color:${brand.soft};font-size:13px;line-height:1.5;font-family:${brand.font};">
+              Completed trips can settle into your wallet so payouts stay organized.
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:14px 0;border-top:1px solid ${brand.border};">
+            <p style="margin:0;color:${brand.black};font-size:14px;font-weight:700;line-height:1.5;font-family:${brand.font};">
+              Withdraw when ready
+            </p>
+            <p style="margin:4px 0 0;color:${brand.soft};font-size:13px;line-height:1.5;font-family:${brand.font};">
+              Move funds to your bank account from the wallet withdraw flow.
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:14px 0 0;border-top:1px solid ${brand.border};">
+            <p style="margin:0;color:${brand.black};font-size:14px;font-weight:700;line-height:1.5;font-family:${brand.font};">
+              Protect your passcode
+            </p>
+            <p style="margin:4px 0 0;color:${brand.soft};font-size:13px;line-height:1.5;font-family:${brand.font};">
+              Your wallet passcode keeps earnings safe — keep it private.
+            </p>
+          </td>
+        </tr>
+      </table>
+      <p style="margin:0;color:${brand.soft};font-size:13px;line-height:1.55;font-family:${brand.font};">
+        Open the CitiRide Driver app to manage your wallet.<br/><br/>
+        — CitiRide
+      </p>
+    `,
+  });
+}
+
+export function driverWalletCreatedEmailText({ email }) {
+  const firstName = guessFirstName(email);
+  return [
+    firstName
+      ? `Congratulations, ${firstName}`
+      : 'Your CitiRide driver wallet is ready',
+    '',
+    'Your CitiRide driver wallet is set up. Receive ride earnings, track payouts, and withdraw funds securely from the app.',
+    '',
+    'Open the CitiRide Driver app to manage your wallet.',
+    '',
+    '— CitiRide',
+  ].join('\n');
+}
+
 function emailShell({ preheader, title, bodyHtml }) {
   const logoUrl = publicLogoUrl();
   const year = new Date().getFullYear();

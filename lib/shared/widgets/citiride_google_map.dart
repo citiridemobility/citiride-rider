@@ -7,6 +7,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../app/theme/app_colors.dart';
 import '../../core/maps/google_maps_config.dart';
+import '../../core/maps/google_maps_js_loader.dart';
 
 class CitirideGoogleMap extends StatefulWidget {
   const CitirideGoogleMap({
@@ -82,16 +83,15 @@ class _CitirideGoogleMapState extends State<CitirideGoogleMap> {
   }
 
   Future<bool> _loadMapsSdk() async {
-    // google_maps_flutter_web is still fragile (white tiles, ROADMAP races,
-    // broken overlays). Prefer the designed map UI on web; use Google Maps
-    // on Android/iOS where the SDK is reliable.
-    if (kIsWeb) {
-      return false;
-    }
-
     final apiKey = await GoogleMapsConfig.runtimeApiKey();
     if (!GoogleMapsConfig.isUsableApiKey(apiKey)) {
       return false;
+    }
+
+    // Web must wait until google.maps.MapTypeId exists; building GoogleMap
+    // earlier yields ROADMAP TypeErrors / blank tiles.
+    if (kIsWeb) {
+      return ensureGoogleMapsJsSdk(apiKey: apiKey!);
     }
 
     return true;
@@ -143,10 +143,6 @@ class _CitirideGoogleMapState extends State<CitirideGoogleMap> {
 
   @override
   Widget build(BuildContext context) {
-    if (kIsWeb) {
-      return _fallbackMap();
-    }
-
     return FutureBuilder<bool>(
       future: _mapsSdkReady,
       builder: (context, snapshot) {
@@ -221,17 +217,18 @@ class _CitirideGoogleMapState extends State<CitirideGoogleMap> {
           );
         }
       },
-      style: _darkMapStyle,
+      // JSON map styles are unreliable on google_maps_flutter_web (blank tiles).
+      style: kIsWeb ? null : _darkMapStyle,
       markers: widget.markers,
       polylines: widget.polylines,
       onTap: widget.onMapTap,
       onCameraMove: widget.onCameraMove,
       onCameraIdle: widget.onCameraIdle,
-      myLocationEnabled: widget.myLocationEnabled,
+      myLocationEnabled: !kIsWeb && widget.myLocationEnabled,
       myLocationButtonEnabled: false,
       compassEnabled: false,
       mapToolbarEnabled: false,
-      zoomControlsEnabled: false,
+      zoomControlsEnabled: kIsWeb,
       scrollGesturesEnabled: widget.scrollGesturesEnabled,
       zoomGesturesEnabled: widget.zoomGesturesEnabled,
       rotateGesturesEnabled: widget.rotateGesturesEnabled,

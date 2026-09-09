@@ -418,6 +418,7 @@ class _PickupMap extends StatelessWidget {
           onPointerDown: (_) => onMapGestureStart?.call(),
           child: CitirideLiveRouteMap(
             route: route,
+            showCars: false,
             showPickupMarker: false,
             fitRouteInView: fitRouteInView,
             fallbackSemanticsLabel: 'Pickup map background',

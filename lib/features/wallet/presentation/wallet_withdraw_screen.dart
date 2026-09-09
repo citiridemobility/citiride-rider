@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_colors.dart';
+import '../../../core/auth/citiride_wallet_client.dart';
 import 'wallet_banks.dart';
 import 'wallet_flow_widgets.dart';
 import 'wallet_select_bank_sheet.dart';
@@ -24,17 +27,23 @@ class WalletWithdrawScreen extends StatefulWidget {
 class _WalletWithdrawScreenState extends State<WalletWithdrawScreen> {
   static const _presets = <int>[2000, 5000, 10000];
 
+  final _walletClient = CitirideWalletClient();
   late WalletBank _selectedBank;
   final _accountController = TextEditingController();
   final _amountController = TextEditingController();
   int? _selectedPreset;
   bool _isSubmitting = false;
+  bool _resolvingAccount = false;
+  String? _resolvedAccountName;
+  String? _resolveError;
 
   bool get _canWithdraw {
     final account = _accountController.text.trim();
     final amount = _parseAmount(_amountController.text);
     return !_isSubmitting &&
-        account.length >= 10 &&
+        !_resolvingAccount &&
+        account.length == 10 &&
+        (_resolvedAccountName?.trim().isNotEmpty ?? false) &&
         amount != null &&
         amount > 0;
   }
@@ -59,7 +68,14 @@ class _WalletWithdrawScreenState extends State<WalletWithdrawScreen> {
   }
 
   void _onFieldsChanged() {
-    setState(() {});
+    setState(() {
+      _resolvedAccountName = null;
+      _resolveError = null;
+    });
+    final account = _accountController.text.trim();
+    if (account.length == 10) {
+      unawaited(_resolveAccount());
+    }
   }
 
   void _onAmountEdited() {
@@ -67,6 +83,43 @@ class _WalletWithdrawScreenState extends State<WalletWithdrawScreen> {
     setState(() {
       _selectedPreset = _presets.contains(amount) ? amount : null;
     });
+  }
+
+  Future<void> _resolveAccount() async {
+    final account = _accountController.text.trim();
+    if (account.length != 10 || _selectedBank.paystackCode.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _resolvingAccount = true;
+      _resolveError = null;
+    });
+
+    try {
+      final resolved = await _walletClient.resolveBankAccount(
+        accountNumber: account,
+        bankCode: _selectedBank.paystackCode,
+      );
+      if (!mounted) return;
+      if (_accountController.text.trim() != account) return;
+      setState(() {
+        _resolvedAccountName = resolved.accountName;
+        _resolvingAccount = false;
+        _resolveError = resolved.accountName.isEmpty
+            ? 'Account name not found for this bank.'
+            : null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _resolvingAccount = false;
+        _resolvedAccountName = null;
+        _resolveError = error is CitirideWalletException
+            ? error.message
+            : 'Could not resolve account name. Check bank and account number.';
+      });
+    }
   }
 
   int? _parseAmount(String raw) {
@@ -102,7 +155,14 @@ class _WalletWithdrawScreenState extends State<WalletWithdrawScreen> {
     if (!mounted || bank == null) {
       return;
     }
-    setState(() => _selectedBank = bank);
+    setState(() {
+      _selectedBank = bank;
+      _resolvedAccountName = null;
+      _resolveError = null;
+    });
+    if (_accountController.text.trim().length == 10) {
+      await _resolveAccount();
+    }
   }
 
   void _selectPreset(int amount) {
@@ -121,7 +181,8 @@ class _WalletWithdrawScreenState extends State<WalletWithdrawScreen> {
     }
 
     final amount = _parseAmount(_amountController.text);
-    if (amount == null) {
+    final accountName = _resolvedAccountName?.trim() ?? '';
+    if (amount == null || accountName.isEmpty) {
       return;
     }
 
@@ -129,6 +190,7 @@ class _WalletWithdrawScreenState extends State<WalletWithdrawScreen> {
       bank: _selectedBank,
       accountNumber: _accountController.text.trim(),
       amount: amount,
+      accountName: accountName,
     );
 
     if (!WalletTransactionPinStore.instance.hasPin) {
@@ -200,6 +262,36 @@ class _WalletWithdrawScreenState extends State<WalletWithdrawScreen> {
                             LengthLimitingTextInputFormatter(10),
                           ],
                         ),
+                        if (_resolvingAccount) ...[
+                          const SizedBox(height: 10),
+                          const Text(
+                            'Resolving account name…',
+                            style: TextStyle(
+                              color: Color(0xFF8F8F8F),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ] else if (_resolvedAccountName != null &&
+                            _resolvedAccountName!.isNotEmpty) ...[
+                          const SizedBox(height: 10),
+                          Text(
+                            _resolvedAccountName!,
+                            style: const TextStyle(
+                              color: AppColors.citirideYellow,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ] else if (_resolveError != null) ...[
+                          const SizedBox(height: 10),
+                          Text(
+                            _resolveError!,
+                            style: const TextStyle(
+                              color: Color(0xFFFF8A8A),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 22),
                         const Text(
                           'Amount',

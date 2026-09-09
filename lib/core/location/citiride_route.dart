@@ -47,6 +47,10 @@ class CitirideRoute {
     );
   }
 
+  /// Prefer snapped polyline ends so pins sit on the drawn route.
+  LatLng get routeStart => points.isNotEmpty ? points.first : origin;
+  LatLng get routeEnd => points.isNotEmpty ? points.last : destination;
+
   LatLngBounds get latLngBounds {
     final allPoints = points.isEmpty ? [origin, destination] : points;
     var minLat = allPoints.first.latitude;

@@ -238,6 +238,7 @@ class _PaymentMap extends StatelessWidget {
       children: [
         CitirideLiveRouteMap(
           route: route,
+          showCars: false,
           fallbackSemanticsLabel: 'Payment map background',
           routeSemanticsLabel: 'Payment route direction',
         ),

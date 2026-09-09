@@ -157,6 +157,10 @@ class LiveRide {
     required this.fare,
     this.driverId,
     this.driverLocation,
+    this.driverName,
+    this.driverImage,
+    this.driverVehicle,
+    this.driverPlate,
     this.rideType = 'regular',
     this.paymentMethod = 'cash',
     this.createdAt,
@@ -172,6 +176,10 @@ class LiveRide {
   final RideLatLng destination;
   final RideFare fare;
   final DriverLocation? driverLocation;
+  final String? driverName;
+  final String? driverImage;
+  final String? driverVehicle;
+  final String? driverPlate;
   final String rideType;
   final String paymentMethod;
   final Timestamp? createdAt;
@@ -197,6 +205,10 @@ class LiveRide {
       driverLocation: rawDriverLocation is Map
           ? DriverLocation.fromMap(rawDriverLocation)
           : null,
+      driverName: (data['driverName'] as String?)?.trim(),
+      driverImage: (data['driverImage'] as String?)?.trim(),
+      driverVehicle: (data['driverVehicle'] as String?)?.trim(),
+      driverPlate: (data['driverPlate'] as String?)?.trim(),
       rideType: (data['rideType'] as String?)?.trim().isNotEmpty == true
           ? (data['rideType'] as String).trim()
           : 'regular',
@@ -240,6 +252,96 @@ class DriverLocation {
   }
 }
 
+/// A nearby online driver for map display.
+class NearbyDriver {
+  const NearbyDriver({
+    required this.driverId,
+    required this.lat,
+    required this.lng,
+    this.heading = 0,
+  });
+
+  final String driverId;
+  final double lat;
+  final double lng;
+  final double heading;
+
+  factory NearbyDriver.fromMap(String id, Map<String, dynamic> data) {
+    return NearbyDriver(
+      driverId: id,
+      lat:
+          (data['lat'] as num?)?.toDouble() ??
+          (data['latitude'] as num?)?.toDouble() ??
+          0,
+      lng:
+          (data['lng'] as num?)?.toDouble() ??
+          (data['longitude'] as num?)?.toDouble() ??
+          0,
+      heading: (data['heading'] as num?)?.toDouble() ?? 0,
+    );
+  }
+}
+
+/// Public driver card fields from `drivers/{driverId}`.
+class DriverProfileSummary {
+  const DriverProfileSummary({
+    required this.driverId,
+    this.displayName,
+    this.photoUri,
+    this.vehicleLabel,
+    this.plateNumber,
+  });
+
+  final String driverId;
+  final String? displayName;
+  final String? photoUri;
+  final String? vehicleLabel;
+  final String? plateNumber;
+
+  factory DriverProfileSummary.fromMap(String id, Map<String, dynamic> data) {
+    final vehicleDetails = asStringKeyedMap(data['vehicleDetails']);
+    final personalInfo = asStringKeyedMap(data['personalInfo']);
+
+    String? firstNonEmpty(List<String?> values) {
+      for (final value in values) {
+        final clean = value?.trim();
+        if (clean != null && clean.isNotEmpty) {
+          return clean;
+        }
+      }
+      return null;
+    }
+
+    return DriverProfileSummary(
+      driverId: id,
+      displayName: firstNonEmpty([
+        data['displayName'] as String?,
+        data['name'] as String?,
+        personalInfo?['fullName'] as String?,
+        personalInfo?['name'] as String?,
+      ]),
+      photoUri: firstNonEmpty([
+        data['photoUri'] as String?,
+        data['photoURL'] as String?,
+        data['profilePhoto'] as String?,
+        personalInfo?['photoUri'] as String?,
+      ]),
+      vehicleLabel: firstNonEmpty([
+        data['vehicleMakeModel'] as String?,
+        data['vehicleModel'] as String?,
+        vehicleDetails?['vehicleMakeModel'] as String?,
+        data['vehicle'] as String?,
+      ]),
+      plateNumber: firstNonEmpty([
+        data['vehiclePlateNumber'] as String?,
+        data['vehiclePlate'] as String?,
+        vehicleDetails?['vehiclePlateNumber'] as String?,
+        data['plateNumber'] as String?,
+      ]),
+    );
+  }
+}
+
 /// Payload for creating a new ride request (rider → Firestore).
 class NewRideRequest {
   const NewRideRequest({
@@ -249,6 +351,8 @@ class NewRideRequest {
     required this.estimatedFare,
     this.rideType = 'regular',
     this.paymentMethod = 'cash',
+    this.riderName = 'Rider',
+    this.riderImage,
   });
 
   final String riderId;
@@ -257,6 +361,8 @@ class NewRideRequest {
   final double estimatedFare;
   final String rideType;
   final String paymentMethod;
+  final String riderName;
+  final String? riderImage;
 }
 
 /// Write map for a new ride. Always stamps server timestamps.
@@ -270,6 +376,9 @@ Map<String, Object?> newRideWriteMap(NewRideRequest request) {
     'fare': {'estimated': request.estimatedFare, 'final': null},
     'rideType': request.rideType,
     'paymentMethod': request.paymentMethod,
+    'riderName': request.riderName,
+    if (request.riderImage != null) 'riderImage': request.riderImage,
+    'riderRating': '5.0',
     'createdAt': FieldValue.serverTimestamp(),
     'updatedAt': FieldValue.serverTimestamp(),
   };

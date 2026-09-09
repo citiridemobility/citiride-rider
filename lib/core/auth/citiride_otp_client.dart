@@ -88,6 +88,23 @@ class CitirideOtpClient {
     throw _mapError(response);
   }
 
+  /// Sent after wallet passcode enrollment completes.
+  Future<void> congratulateWalletCreated({
+    required String email,
+    String role = 'rider',
+  }) async {
+    final response = await _post('/v1/wallet/congratulate', {
+      'email': email,
+      'role': role,
+    });
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return;
+    }
+
+    throw _mapError(response);
+  }
+
   Future<http.Response> _post(String path, Map<String, Object?> body) async {
     if (!hasConfiguredBaseUrl) {
       throw const CitirideAuthException(

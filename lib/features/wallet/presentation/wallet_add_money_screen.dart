@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_colors.dart';
+import '../../../core/auth/citiride_wallet_client.dart';
 import '../../../shared/widgets/citiride_bottom_nav.dart';
 import '../../profile/domain/rider_profile.dart';
 import 'wallet_flow_widgets.dart';
@@ -15,44 +18,170 @@ class WalletAddMoneyScreen extends StatefulWidget {
 }
 
 class _WalletAddMoneyScreenState extends State<WalletAddMoneyScreen> {
+  final _walletClient = CitirideWalletClient();
+
   bool _balanceVisible = true;
+  bool _loading = true;
+  bool _checkingPayment = false;
+  bool _simulatingTest = false;
+  String? _error;
+  CitirideWallet? _wallet;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_loadFundingAccount());
+    });
+  }
+
+  Future<void> _loadFundingAccount() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final profile = RiderProfileStore.instance.profile.value;
+      final email = profile.email.trim().toLowerCase();
+      if (email.isEmpty) {
+        throw const CitirideWalletException(
+          'Add your email in Personal Info before funding your wallet.',
+        );
+      }
+
+      final wallet = await _walletClient.ensureFundingAccount(
+        email: email,
+        fullName: profile.fullName,
+        phone: profile.phoneNumber,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _wallet = wallet;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = error is CitirideWalletException
+            ? error.message
+            : 'Unable to load funding account.';
+      });
+    }
+  }
 
   void _goBack() {
     if (context.canPop()) {
       context.pop();
       return;
     }
-
     context.go('/wallet');
   }
 
   Future<void> _copyValue(String label, String value) async {
+    if (value.trim().isEmpty) return;
     await Clipboard.setData(ClipboardData(text: value));
-    if (!mounted) {
-      return;
-    }
-
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('$label copied')),
     );
   }
 
-  void _onPaymentCompleted() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Payment marked as completed')),
-    );
+  Future<void> _onPaymentCompleted() async {
+    if (_checkingPayment) return;
+    setState(() => _checkingPayment = true);
 
-    if (context.canPop()) {
-      context.pop();
-      return;
+    try {
+      final before = _wallet?.availableBalance ?? 0;
+      final wallet = await _walletClient.requeryFunding();
+      if (!mounted) return;
+
+      setState(() {
+        _wallet = wallet;
+        _checkingPayment = false;
+      });
+
+      final credited = wallet.availableBalance > before;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            credited
+                ? 'Payment found. Balance updated to ${_formatBalance(wallet.availableBalance)}.'
+                : 'Paystack is rechecking this account. In test mode, use Paystack Demo Bank (not your real bank app), or tap Simulate test deposit.',
+          ),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+
+      if (credited) {
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        if (!mounted) return;
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go('/wallet');
+        }
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _checkingPayment = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            error is CitirideWalletException
+                ? error.message
+                : 'Could not check for payment yet.',
+          ),
+        ),
+      );
     }
+  }
 
-    context.go('/wallet');
+  Future<void> _simulateTestDeposit() async {
+    if (_simulatingTest) return;
+    setState(() => _simulatingTest = true);
+    try {
+      final wallet = await _walletClient.simulateTestDeposit(amount: 1000);
+      if (!mounted) return;
+      setState(() {
+        _wallet = wallet;
+        _simulatingTest = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Test deposit credited. Balance ${_formatBalance(wallet.availableBalance)}.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _simulatingTest = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            error is CitirideWalletException
+                ? error.message
+                : 'Test deposit failed.',
+          ),
+        ),
+      );
+    }
+  }
+
+  String _formatBalance(double value) {
+    return '₦${value.toStringAsFixed(2).replaceAllMapped(
+          RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+          (m) => '${m[1]},',
+        )}';
   }
 
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.paddingOf(context).bottom;
+    final funding = _wallet?.fundingAccount;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
@@ -77,43 +206,107 @@ class _WalletAddMoneyScreenState extends State<WalletAddMoneyScreen> {
                   ),
                   const SizedBox(height: 18),
                   Expanded(
-                    child: SingleChildScrollView(
-                      padding: EdgeInsets.fromLTRB(
-                        20,
-                        0,
-                        20,
-                        bottomInset + 140,
-                      ),
-                      child: Column(
-                        children: [
-                          ValueListenableBuilder<RiderProfile>(
-                            valueListenable: RiderProfileStore.instance.profile,
-                            builder: (context, profile, _) {
-                              return _AddMoneyBalanceCard(
-                                name: profile.displayName,
-                                balanceVisible: _balanceVisible,
-                                onToggleVisibility: () {
-                                  setState(
-                                    () => _balanceVisible = !_balanceVisible,
-                                  );
-                                },
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 20),
-                          _AddMoneyDetailsCard(
-                            onCopy: _copyValue,
-                          ),
-                          const SizedBox(height: 24),
-                          WalletPrimaryButton(
-                            key: const ValueKey(
-                              'wallet-payment-completed-button',
+                    child: RefreshIndicator(
+                      color: AppColors.citirideYellow,
+                      onRefresh: _loadFundingAccount,
+                      child: SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: EdgeInsets.fromLTRB(
+                          20,
+                          0,
+                          20,
+                          bottomInset + 140,
+                        ),
+                        child: Column(
+                          children: [
+                            ValueListenableBuilder<RiderProfile>(
+                              valueListenable:
+                                  RiderProfileStore.instance.profile,
+                              builder: (context, profile, _) {
+                                return _AddMoneyBalanceCard(
+                                  name: profile.displayName,
+                                  balanceText: _wallet == null
+                                      ? '₦—.——'
+                                      : _formatBalance(
+                                          _wallet!.availableBalance,
+                                        ),
+                                  balanceVisible: _balanceVisible,
+                                  onToggleVisibility: () {
+                                    setState(
+                                      () =>
+                                          _balanceVisible = !_balanceVisible,
+                                    );
+                                  },
+                                );
+                              },
                             ),
-                            label: 'Payment completed',
-                            enabled: true,
-                            onPressed: _onPaymentCompleted,
-                          ),
-                        ],
+                            const SizedBox(height: 20),
+                            if (_loading)
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 40),
+                                child: CircularProgressIndicator(
+                                  color: AppColors.citirideYellow,
+                                ),
+                              )
+                            else if (_error != null)
+                              _ErrorCard(
+                                message: _error!,
+                                onRetry: _loadFundingAccount,
+                              )
+                            else
+                              _AddMoneyDetailsCard(
+                                riderName: RiderProfileStore
+                                    .instance.profile.value.displayName,
+                                accountName: funding?.accountName ?? '',
+                                accountNumber: funding?.accountNumber ?? '',
+                                bankName: funding?.bankName ?? '',
+                                onCopy: _copyValue,
+                              ),
+                            const SizedBox(height: 16),
+                            Text(
+                              _wallet?.testMode == true
+                                  ? 'Test mode: do not transfer from your real bank app. Use Paystack’s Demo Bank to pay this virtual account, or tap Simulate test deposit below. Live mode credits after Paystack confirms the transfer.'
+                                  : 'Transfer to this account from your bank app. Your wallet updates automatically after Paystack confirms the payment.',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Color(0xFF8F8F8F),
+                                fontSize: 12,
+                                height: 1.35,
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            WalletPrimaryButton(
+                              key: const ValueKey(
+                                'wallet-payment-completed-button',
+                              ),
+                              label: _checkingPayment
+                                  ? 'Checking payment…'
+                                  : 'I’ve sent the transfer',
+                              enabled: funding?.accountNumber.isNotEmpty ==
+                                      true &&
+                                  !_checkingPayment &&
+                                  !_simulatingTest,
+                              onPressed: _onPaymentCompleted,
+                            ),
+                            if (_wallet?.testMode == true) ...[
+                              const SizedBox(height: 12),
+                              TextButton(
+                                onPressed: _simulatingTest
+                                    ? null
+                                    : _simulateTestDeposit,
+                                child: Text(
+                                  _simulatingTest
+                                      ? 'Crediting…'
+                                      : 'Simulate test deposit (₦1,000)',
+                                  style: const TextStyle(
+                                    color: AppColors.citirideYellow,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -130,6 +323,42 @@ class _WalletAddMoneyScreenState extends State<WalletAddMoneyScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ErrorCard extends StatelessWidget {
+  const _ErrorCard({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF222222),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Column(
+        children: [
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppColors.white, fontSize: 14),
+          ),
+          const SizedBox(height: 14),
+          TextButton(
+            onPressed: onRetry,
+            child: const Text(
+              'Try again',
+              style: TextStyle(color: AppColors.citirideYellow),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -176,11 +405,13 @@ class _AddMoneyHeader extends StatelessWidget {
 class _AddMoneyBalanceCard extends StatelessWidget {
   const _AddMoneyBalanceCard({
     required this.name,
+    required this.balanceText,
     required this.balanceVisible,
     required this.onToggleVisibility,
   });
 
   final String name;
+  final String balanceText;
   final bool balanceVisible;
   final VoidCallback onToggleVisibility;
 
@@ -229,7 +460,7 @@ class _AddMoneyBalanceCard extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        balanceVisible ? '₦435.54' : '••••••',
+                        balanceVisible ? balanceText : '••••••',
                         style: const TextStyle(
                           color: AppColors.white,
                           fontSize: 32,
@@ -261,13 +492,19 @@ class _AddMoneyBalanceCard extends StatelessWidget {
 }
 
 class _AddMoneyDetailsCard extends StatelessWidget {
-  const _AddMoneyDetailsCard({required this.onCopy});
+  const _AddMoneyDetailsCard({
+    required this.riderName,
+    required this.accountName,
+    required this.accountNumber,
+    required this.bankName,
+    required this.onCopy,
+  });
 
+  final String riderName;
+  final String accountName;
+  final String accountNumber;
+  final String bankName;
   final Future<void> Function(String label, String value) onCopy;
-
-  static const _recipientName = 'CitiRide - Umoru Osigbemhe';
-  static const _accountNumber = '98291029281';
-  static const _bank = 'Paystack-titan';
 
   @override
   Widget build(BuildContext context) {
@@ -286,9 +523,9 @@ class _AddMoneyDetailsCard extends StatelessWidget {
             child: Icon(Icons.person, color: AppColors.white, size: 30),
           ),
           const SizedBox(height: 10),
-          const Text(
-            'Ahmed Singer',
-            style: TextStyle(
+          Text(
+            riderName,
+            style: const TextStyle(
               color: AppColors.white,
               fontSize: 16,
               fontWeight: FontWeight.w600,
@@ -298,20 +535,20 @@ class _AddMoneyDetailsCard extends StatelessWidget {
           const SizedBox(height: 18),
           _CopyDetailRow(
             label: "Recipient's account name",
-            value: _recipientName,
-            onCopy: () => onCopy("Recipient's account name", _recipientName),
+            value: accountName.isEmpty ? '—' : accountName,
+            onCopy: () => onCopy("Recipient's account name", accountName),
           ),
           const Divider(height: 1, color: Color(0xFF3A3A3A)),
           _CopyDetailRow(
             label: 'Account number',
-            value: _accountNumber,
-            onCopy: () => onCopy('Account number', _accountNumber),
+            value: accountNumber.isEmpty ? '—' : accountNumber,
+            onCopy: () => onCopy('Account number', accountNumber),
           ),
           const Divider(height: 1, color: Color(0xFF3A3A3A)),
           _CopyDetailRow(
             label: 'Bank',
-            value: _bank,
-            onCopy: () => onCopy('Bank', _bank),
+            value: bankName.isEmpty ? '—' : bankName,
+            onCopy: () => onCopy('Bank', bankName),
           ),
         ],
       ),

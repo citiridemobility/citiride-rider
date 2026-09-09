@@ -68,6 +68,34 @@ export function driverUidFromEmail(email) {
 }
 
 /**
+ * Ensure the Auth user exists with a real email so client SDKs expose user.email.
+ */
+async function ensureAuthUserWithEmail(uid, email) {
+  const normalized = String(email || '')
+    .trim()
+    .toLowerCase();
+  if (!uid || !normalized) return;
+
+  try {
+    await admin.auth().updateUser(uid, {
+      email: normalized,
+      emailVerified: true,
+    });
+  } catch (error) {
+    if (error?.code === 'auth/user-not-found') {
+      await admin.auth().createUser({
+        uid,
+        email: normalized,
+        emailVerified: true,
+      });
+      return;
+    }
+    // Email already used on another uid — keep token minting working.
+    console.warn('ensureAuthUserWithEmail failed:', error?.code || error);
+  }
+}
+
+/**
  * Mint a Firebase custom token after rider email OTP succeeds.
  * @returns {Promise<string|null>}
  */
@@ -80,6 +108,8 @@ export async function createRiderCustomToken(email) {
   if (!uid) {
     return null;
   }
+
+  await ensureAuthUserWithEmail(uid, email);
 
   return admin.auth().createCustomToken(uid, {
     email,
@@ -102,6 +132,8 @@ export async function createDriverCustomToken(email) {
     return null;
   }
 
+  await ensureAuthUserWithEmail(uid, email);
+
   const token = await admin.auth().createCustomToken(uid, {
     email,
     driverId: uid,
@@ -110,3 +142,4 @@ export async function createDriverCustomToken(email) {
 
   return { token, uid };
 }
+

@@ -13,12 +13,18 @@ import {
   driverWelcomeEmailText,
   riderWelcomeEmailHtml,
   riderWelcomeEmailText,
+  riderWalletCreatedEmailHtml,
+  riderWalletCreatedEmailText,
+  driverWalletCreatedEmailHtml,
+  driverWalletCreatedEmailText,
 } from './emails/templates.js';
 import {
   createDriverCustomToken,
   createRiderCustomToken,
   hasFirebaseAdmin,
 } from './firebase-admin.js';
+import { hasPaystack } from './paystack/client.js';
+import { handlePaystackWebhook, walletRouter } from './wallet/routes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, '../public');
@@ -47,12 +53,23 @@ const otpStore = new Map();
 const welcomeSentAt = new Map();
 /** @type {Map<string, number>} driver email -> last successful driver welcome send (ms) */
 const driverWelcomeSentAt = new Map();
+/** @type {Map<string, number>} email -> last wallet congratulations send (ms) */
+const riderWalletCreatedSentAt = new Map();
+/** @type {Map<string, number>} driver email -> last wallet congratulations send (ms) */
+const driverWalletCreatedSentAt = new Map();
 const welcomeCooldownMs = Number(
   process.env.OTP_WELCOME_COOLDOWN_MS || 24 * 60 * 60 * 1000,
 );
 
 app.use(cors());
-app.use(express.json({ limit: '32kb' }));
+app.use(
+  express.json({
+    limit: '64kb',
+    verify: (req, _res, buf) => {
+      req.rawBody = buf;
+    },
+  }),
+);
 app.use('/assets', express.static(publicDir, { maxAge: '7d' }));
 
 app.get('/health', (_req, res) => {
@@ -61,9 +78,19 @@ app.get('/health', (_req, res) => {
     demoMode,
     hasResendKey: Boolean(resendApiKey),
     hasFirebaseAdmin: hasFirebaseAdmin(),
+    hasPaystack: hasPaystack(),
     emailTheme: 'branded-light-v2',
     emailSubject: 'Your CitiRide one-time password',
   });
+});
+
+app.use('/v1/wallet', walletRouter);
+app.post('/v1/paystack/webhook', (req, res) => {
+  // Prefer raw buffer captured by express.json verify hook.
+  if (!Buffer.isBuffer(req.body) && req.rawBody) {
+    req.body = req.rawBody;
+  }
+  return handlePaystackWebhook(req, res);
 });
 
 app.get('/v1/email-preview', (_req, res) => {
@@ -419,6 +446,81 @@ app.post('/v1/driver/otp/verify', async (req, res) => {
   }
 });
 
+/**
+ * Sent after wallet passcode enrollment completes (rider or driver app).
+ * Body: { email, role?: "rider" | "driver" }
+ */
+app.post('/v1/wallet/congratulate', async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    const role =
+      String(req.body?.role || 'rider').trim().toLowerCase() === 'driver'
+        ? 'driver'
+        : 'rider';
+
+    if (!email) {
+      return res.status(400).json({
+        error: 'invalid_email',
+        message: 'Enter a valid email address.',
+      });
+    }
+
+    const status =
+      role === 'driver'
+        ? await sendDriverWalletCreatedEmail(email)
+        : await sendRiderWalletCreatedEmail(email);
+
+    return res.json({
+      ok: true,
+      email,
+      role,
+      walletEmail: status,
+    });
+  } catch (error) {
+    console.error('wallet congratulate failed', error);
+    return res.status(500).json({
+      error: 'server_error',
+      message: 'Unable to send wallet congratulations email.',
+    });
+  }
+});
+
+/**
+ * Explicit driver welcome send (used if verify-time welcome failed/skipped).
+ * Body: { email, force?: boolean }
+ */
+app.post('/v1/driver/welcome', async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    const force = Boolean(req.body?.force);
+
+    if (!email) {
+      return res.status(400).json({
+        error: 'invalid_email',
+        message: 'Enter a valid email address.',
+      });
+    }
+
+    if (force) {
+      driverWelcomeSentAt.delete(email);
+    }
+
+    const welcomeEmail = await sendDriverWelcomeEmail(email);
+    return res.json({
+      ok: true,
+      email,
+      role: 'driver',
+      welcomeEmail,
+    });
+  } catch (error) {
+    console.error('driver welcome failed', error);
+    return res.status(500).json({
+      error: 'server_error',
+      message: 'Unable to send driver welcome email.',
+    });
+  }
+});
+
 app.listen(port, () => {
   console.log(
     `CitiRide OTP API listening on :${port} (demoMode=${demoMode}, hasResendKey=${Boolean(resendApiKey)}, hasFirebaseAdmin=${hasFirebaseAdmin()})`,
@@ -450,6 +552,34 @@ async function sendDriverWelcomeEmail(email) {
     html: driverWelcomeEmailHtml({ email }),
     text: driverWelcomeEmailText({ email }),
     logLabel: 'driver welcome email',
+  });
+}
+
+/**
+ * @returns {Promise<'sent' | 'skipped' | 'failed'>}
+ */
+async function sendRiderWalletCreatedEmail(email) {
+  return sendWelcomeEmail({
+    email,
+    sentAtMap: riderWalletCreatedSentAt,
+    subject: 'Congratulations — your CitiRide wallet is ready',
+    html: riderWalletCreatedEmailHtml({ email }),
+    text: riderWalletCreatedEmailText({ email }),
+    logLabel: 'rider wallet created email',
+  });
+}
+
+/**
+ * @returns {Promise<'sent' | 'skipped' | 'failed'>}
+ */
+async function sendDriverWalletCreatedEmail(email) {
+  return sendWelcomeEmail({
+    email,
+    sentAtMap: driverWalletCreatedSentAt,
+    subject: 'Congratulations — your CitiRide driver wallet is ready',
+    html: driverWalletCreatedEmailHtml({ email }),
+    text: driverWalletCreatedEmailText({ email }),
+    logLabel: 'driver wallet created email',
   });
 }
 

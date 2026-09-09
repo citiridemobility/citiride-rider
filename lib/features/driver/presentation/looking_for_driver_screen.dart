@@ -18,6 +18,7 @@ import '../../../core/location/route_query.dart';
 import '../../../core/maps/google_maps_config.dart';
 import '../../../core/session/citiride_session_store.dart';
 import '../../pickup/presentation/select_pickup_location_screen.dart';
+import '../../profile/domain/rider_profile_store.dart';
 import '../../ride/data/ride_repository.dart';
 import '../../ride/domain/live_ride.dart';
 import '../../ride/presentation/ride_trip_session.dart';
@@ -119,6 +120,8 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
   final _routeService = CitirideRouteService();
   final _sessionStore = const CitirideSessionStore();
   StreamSubscription<LiveRide>? _rideSubscription;
+  StreamSubscription<List<NearbyDriver>>? _nearbyDriversSub;
+  List<NearbyDriver> _nearbyDrivers = const [];
   String? _rideId;
   String? _matchError;
   String? _statusHint;
@@ -145,6 +148,7 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
       _driverFoundTimer = Timer(_driverFoundDelay, _showDriverFound);
       return;
     }
+    _startNearbyDriversWatch();
     unawaited(_startRideMatching());
   }
 
@@ -169,7 +173,22 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
   void dispose() {
     _driverFoundTimer?.cancel();
     unawaited(_rideSubscription?.cancel() ?? Future<void>.value());
+    unawaited(_nearbyDriversSub?.cancel() ?? Future<void>.value());
     super.dispose();
+  }
+
+  void _startNearbyDriversWatch() {
+    _nearbyDriversSub = _rideRepository.watchNearbyDrivers().listen(
+      (drivers) {
+        if (!mounted) return;
+        setState(() {
+          _nearbyDrivers = drivers;
+        });
+      },
+      onError: (_) {
+        // Nearby cars are cosmetic; failures should not disrupt the flow.
+      },
+    );
   }
 
   String _normalizedPickup(String value) {
@@ -246,6 +265,7 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
         _estimatedFare = estimatedFare;
       });
 
+      final riderProfile = RiderProfileStore.instance.profile.value;
       final ride = await _rideRepository.requestRide(
         NewRideRequest(
           riderId: riderId,
@@ -262,6 +282,7 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
           estimatedFare: estimatedFare,
           rideType: widget.rideType,
           paymentMethod: widget.paymentMethod,
+          riderName: riderProfile.displayName,
         ),
       );
 
@@ -495,6 +516,7 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
                     destinationLatLng: _destinationLatLng,
                     routeSemanticsLabel: 'Looking route direction',
                     showNearbyCars: true,
+                    nearbyDrivers: _nearbyDrivers,
                   ),
                 ),
                 Positioned(
@@ -580,6 +602,10 @@ class _DriverFoundScreenState extends State<DriverFoundScreen> {
   StreamSubscription<RideTripSnapshot>? _tripSub;
   LatLng? _driverLatLng;
   double? _driverHeading;
+  String _driverName = 'Driver';
+  String? _driverImage;
+  String? _driverVehicle;
+  String? _driverPlate;
   bool _hasNavigated = false;
 
   bool get _isRunningWidgetTest {
@@ -634,6 +660,10 @@ class _DriverFoundScreenState extends State<DriverFoundScreen> {
       setState(() {
         _driverLatLng = snapshot.driverLatLng;
         _driverHeading = snapshot.driverHeading;
+        _driverName = snapshot.driverName;
+        _driverImage = snapshot.driverImage;
+        _driverVehicle = snapshot.driverVehicle;
+        _driverPlate = snapshot.driverPlate;
       });
       navigateForRideSnapshot(
         context: context,
@@ -905,6 +935,10 @@ class _DriverFoundScreenState extends State<DriverFoundScreen> {
                     onEditRoute: () => _editRoute(context),
                     onNotesTap: () => _showPickupNotesChat(context),
                     onCancelRide: () => _cancelRide(context),
+                    driverName: _driverName,
+                    driverImage: _driverImage,
+                    driverVehicle: _driverVehicle,
+                    driverPlate: _driverPlate,
                   ),
                 ),
               ],
@@ -955,6 +989,11 @@ class _ArrivingScreenState extends State<ArrivingScreen> {
   StreamSubscription<RideTripSnapshot>? _tripSub;
   LatLng? _driverLatLng;
   double? _driverHeading;
+  String _driverName = 'Driver';
+  String? _driverImage;
+  String? _driverVehicle;
+  String? _driverPlate;
+  int _etaMinutes = 2;
   bool _hasNavigated = false;
 
   bool get _isRunningWidgetTest {
@@ -1006,6 +1045,10 @@ class _ArrivingScreenState extends State<ArrivingScreen> {
       setState(() {
         _driverLatLng = snapshot.driverLatLng;
         _driverHeading = snapshot.driverHeading;
+        _driverName = snapshot.driverName;
+        _driverImage = snapshot.driverImage;
+        _driverVehicle = snapshot.driverVehicle;
+        _driverPlate = snapshot.driverPlate;
       });
       navigateForRideSnapshot(
         context: context,
@@ -1263,6 +1306,17 @@ class _ArrivingScreenState extends State<ArrivingScreen> {
                     vehicleAsset: 'assets/images/Car img - select ride.svg',
                     vehicleWidth: 58,
                     vehicleHeight: 34,
+                    routeDriverToPickup: true,
+                    onRouteDuration: (duration) {
+                      if (!mounted) return;
+                      final minutes =
+                          duration.inSeconds <= 0
+                              ? 1
+                              : (duration.inSeconds / 60).ceil().clamp(1, 99);
+                      if (minutes != _etaMinutes) {
+                        setState(() => _etaMinutes = minutes);
+                      }
+                    },
                   ),
                 ),
                 Positioned(
@@ -1301,6 +1355,11 @@ class _ArrivingScreenState extends State<ArrivingScreen> {
                     onNotesTap: () => _showPickupNotesChat(context),
                     onShareRide: () => _shareRide(context),
                     onCancelRide: () => _cancelRide(context),
+                    driverName: _driverName,
+                    driverImage: _driverImage,
+                    driverVehicle: _driverVehicle,
+                    driverPlate: _driverPlate,
+                    etaMinutes: _etaMinutes,
                   ),
                 ),
               ],
@@ -1353,6 +1412,10 @@ class _RideArrivalScreenState extends State<RideArrivalScreen> {
   StreamSubscription<RideTripSnapshot>? _tripSub;
   LatLng? _driverLatLng;
   double? _driverHeading;
+  String _driverName = 'Driver';
+  String? _driverImage;
+  String? _driverVehicle;
+  String? _driverPlate;
   bool _hasNavigated = false;
 
   bool get _isRunningWidgetTest {
@@ -1401,6 +1464,10 @@ class _RideArrivalScreenState extends State<RideArrivalScreen> {
       setState(() {
         _driverLatLng = snapshot.driverLatLng;
         _driverHeading = snapshot.driverHeading;
+        _driverName = snapshot.driverName;
+        _driverImage = snapshot.driverImage;
+        _driverVehicle = snapshot.driverVehicle;
+        _driverPlate = snapshot.driverPlate;
       });
       navigateForRideSnapshot(
         context: context,
@@ -1617,6 +1684,10 @@ class _RideArrivalScreenState extends State<RideArrivalScreen> {
                     onNotesTap: () => _showPickupNotesChat(context),
                     onCallTap: () {},
                     onShareTap: () => _shareRide(context),
+                    driverName: _driverName,
+                    driverImage: _driverImage,
+                    driverVehicle: _driverVehicle,
+                    driverPlate: _driverPlate,
                   ),
                 ),
               ],
@@ -1668,6 +1739,10 @@ class _DrivingToDestinationScreenState
   StreamSubscription<RideTripSnapshot>? _tripSub;
   LatLng? _driverLatLng;
   double? _driverHeading;
+  String _driverName = 'Driver';
+  String? _driverImage;
+  String? _driverVehicle;
+  String? _driverPlate;
   bool _hasNavigated = false;
 
   bool get _isRunningWidgetTest {
@@ -1715,6 +1790,10 @@ class _DrivingToDestinationScreenState
       setState(() {
         _driverLatLng = snapshot.driverLatLng;
         _driverHeading = snapshot.driverHeading;
+        _driverName = snapshot.driverName;
+        _driverImage = snapshot.driverImage;
+        _driverVehicle = snapshot.driverVehicle;
+        _driverPlate = snapshot.driverPlate;
       });
       navigateForRideSnapshot(
         context: context,
@@ -1896,6 +1975,10 @@ class _DrivingToDestinationScreenState
                   child: _DrivingToDestinationPanel(
                     destination: _destination,
                     onDestinationTap: () => _editRoute(context),
+                    driverName: _driverName,
+                    driverImage: _driverImage,
+                    driverVehicle: _driverVehicle,
+                    driverPlate: _driverPlate,
                   ),
                 ),
               ],
@@ -1915,6 +1998,10 @@ class _RideArrivalPanel extends StatelessWidget {
     required this.onNotesTap,
     required this.onCallTap,
     required this.onShareTap,
+    this.driverName = 'Driver',
+    this.driverImage,
+    this.driverVehicle,
+    this.driverPlate,
   });
 
   final int remainingWaitSeconds;
@@ -1923,6 +2010,10 @@ class _RideArrivalPanel extends StatelessWidget {
   final VoidCallback onNotesTap;
   final VoidCallback onCallTap;
   final VoidCallback onShareTap;
+  final String driverName;
+  final String? driverImage;
+  final String? driverVehicle;
+  final String? driverPlate;
 
   bool get _isFeeDue => remainingWaitSeconds <= 0;
 
@@ -1975,7 +2066,13 @@ class _RideArrivalPanel extends StatelessWidget {
             waitingFeeLabel: _waitingFeeLabel,
           ),
           const SizedBox(height: 16),
-          const _ArrivingDriverInfo(leadingInset: 8),
+          _ArrivingDriverInfo(
+            leadingInset: 8,
+            driverName: driverName,
+            driverImage: driverImage,
+            driverVehicle: driverVehicle,
+            driverPlate: driverPlate,
+          ),
           const SizedBox(height: 20),
           _PickupNotesAndCallRow(onNotesTap: onNotesTap, onCallTap: onCallTap),
           const Spacer(),
@@ -2040,10 +2137,18 @@ class _DrivingToDestinationPanel extends StatelessWidget {
   const _DrivingToDestinationPanel({
     required this.destination,
     required this.onDestinationTap,
+    this.driverName = 'Driver',
+    this.driverImage,
+    this.driverVehicle,
+    this.driverPlate,
   });
 
   final String destination;
   final VoidCallback onDestinationTap;
+  final String driverName;
+  final String? driverImage;
+  final String? driverVehicle;
+  final String? driverPlate;
 
   @override
   Widget build(BuildContext context) {
@@ -2083,8 +2188,8 @@ class _DrivingToDestinationPanel extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Toyota Corolla Sedan',
+                    Text(
+                      driverVehicle ?? 'Vehicle',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -2105,9 +2210,9 @@ class _DrivingToDestinationPanel extends StatelessWidget {
                         color: const Color(0xFFEDEDED),
                         borderRadius: BorderRadius.circular(3),
                       ),
-                      child: const Text(
-                        'BEN931AP',
-                        style: TextStyle(
+                      child: Text(
+                        driverPlate ?? '',
+                        style: const TextStyle(
                           color: Color(0xFF8F8F8F),
                           fontSize: 11,
                           fontWeight: FontWeight.w500,
@@ -2120,8 +2225,24 @@ class _DrivingToDestinationPanel extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 18),
-              const CompatibleSvgPicture.asset(
-                'assets/images/driver_img.svg',
+              if (driverImage != null && driverImage!.isNotEmpty)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(31),
+                  child: Image.network(
+                    driverImage!,
+                    width: 56,
+                    height: 62,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const CompatibleSvgPicture.asset(
+                      'assets/images/driver_img.svg',
+                      width: 56,
+                      height: 62,
+                    ),
+                  ),
+                )
+              else
+                const CompatibleSvgPicture.asset(
+                  'assets/images/driver_img.svg',
                 width: 56,
                 height: 62,
                 fit: BoxFit.contain,
@@ -2223,6 +2344,11 @@ class _ArrivingPanel extends StatefulWidget {
     required this.onNotesTap,
     required this.onShareRide,
     required this.onCancelRide,
+    this.driverName = 'Driver',
+    this.driverImage,
+    this.driverVehicle,
+    this.driverPlate,
+    this.etaMinutes = 2,
   });
 
   final String pickupLocation;
@@ -2237,6 +2363,11 @@ class _ArrivingPanel extends StatefulWidget {
   final VoidCallback onNotesTap;
   final VoidCallback onShareRide;
   final VoidCallback onCancelRide;
+  final String driverName;
+  final String? driverImage;
+  final String? driverVehicle;
+  final String? driverPlate;
+  final int etaMinutes;
 
   @override
   State<_ArrivingPanel> createState() => _ArrivingPanelState();
@@ -2342,12 +2473,22 @@ class _ArrivingPanelState extends State<_ArrivingPanel> {
                         onNotesTap: widget.onNotesTap,
                         onShareRide: widget.onShareRide,
                         onCancelRide: widget.onCancelRide,
+                        driverName: widget.driverName,
+                        driverImage: widget.driverImage,
+                        driverVehicle: widget.driverVehicle,
+                        driverPlate: widget.driverPlate,
+                        etaMinutes: widget.etaMinutes,
                       )
                     : _ArrivingCollapsedContent(
                         key: const ValueKey('arriving-collapsed-card'),
                         pickupLocation: _displayPickup,
                         onEditPickup: widget.onEditPickup,
                         onNotesTap: widget.onNotesTap,
+                        driverName: widget.driverName,
+                        driverImage: widget.driverImage,
+                        driverVehicle: widget.driverVehicle,
+                        driverPlate: widget.driverPlate,
+                        etaMinutes: widget.etaMinutes,
                       ),
               ),
             ),
@@ -2364,22 +2505,34 @@ class _ArrivingCollapsedContent extends StatelessWidget {
     required this.pickupLocation,
     required this.onEditPickup,
     required this.onNotesTap,
+    this.driverName = 'Driver',
+    this.driverImage,
+    this.driverVehicle,
+    this.driverPlate,
+    this.etaMinutes = 2,
   });
 
   final String pickupLocation;
   final VoidCallback onEditPickup;
   final VoidCallback onNotesTap;
+  final String driverName;
+  final String? driverImage;
+  final String? driverVehicle;
+  final String? driverPlate;
+  final int etaMinutes;
 
   @override
   Widget build(BuildContext context) {
+    final name = driverName.trim().isEmpty ? 'Driver' : driverName.trim();
+    final mins = etaMinutes.clamp(1, 99);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SizedBox(height: 12),
-        const Text(
-          'Arriving in 2 mins',
+        Text(
+          '$name is on the way',
           textAlign: TextAlign.center,
-          style: TextStyle(
+          style: const TextStyle(
             color: AppColors.white,
             fontSize: 17,
             fontWeight: FontWeight.w600,
@@ -2387,8 +2540,26 @@ class _ArrivingCollapsedContent extends StatelessWidget {
             letterSpacing: 0,
           ),
         ),
+        const SizedBox(height: 8),
+        Text(
+          'Arriving In $mins mins',
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: Color(0xFF8F8F8F),
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            height: 1.2,
+            letterSpacing: 0,
+          ),
+        ),
         const SizedBox(height: 22),
-        const _ArrivingDriverInfo(leadingInset: 8),
+        _ArrivingDriverInfo(
+          leadingInset: 8,
+          driverName: driverName,
+          driverImage: driverImage,
+          driverVehicle: driverVehicle,
+          driverPlate: driverPlate,
+        ),
         const SizedBox(height: 20),
         _PickupNotesAndCallRow(onNotesTap: onNotesTap, onCallTap: () {}),
         const SizedBox(height: 27),
@@ -2430,6 +2601,11 @@ class _ArrivingExpandedContent extends StatelessWidget {
     required this.onNotesTap,
     required this.onShareRide,
     required this.onCancelRide,
+    this.driverName = 'Driver',
+    this.driverImage,
+    this.driverVehicle,
+    this.driverPlate,
+    this.etaMinutes = 2,
   });
 
   final String pickupLocation;
@@ -2442,9 +2618,16 @@ class _ArrivingExpandedContent extends StatelessWidget {
   final VoidCallback onNotesTap;
   final VoidCallback onShareRide;
   final VoidCallback onCancelRide;
+  final String driverName;
+  final String? driverImage;
+  final String? driverVehicle;
+  final String? driverPlate;
+  final int etaMinutes;
 
   @override
   Widget build(BuildContext context) {
+    final name = driverName.trim().isEmpty ? 'Driver' : driverName.trim();
+    final mins = etaMinutes.clamp(1, 99);
     return SingleChildScrollView(
       physics: showFullDetails
           ? const ClampingScrollPhysics()
@@ -2453,10 +2636,10 @@ class _ArrivingExpandedContent extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SizedBox(height: 8),
-          const Text(
-            'Arriving in 2 mins',
+          Text(
+            '$name is on the way',
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               color: AppColors.white,
               fontSize: 17,
               fontWeight: FontWeight.w600,
@@ -2464,8 +2647,26 @@ class _ArrivingExpandedContent extends StatelessWidget {
               letterSpacing: 0,
             ),
           ),
+          const SizedBox(height: 8),
+          Text(
+            'Arriving In $mins mins',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFF8F8F8F),
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              height: 1.2,
+              letterSpacing: 0,
+            ),
+          ),
           const SizedBox(height: 24),
-          const _ArrivingDriverInfo(leadingInset: 40),
+          _ArrivingDriverInfo(
+            leadingInset: 40,
+            driverName: driverName,
+            driverImage: driverImage,
+            driverVehicle: driverVehicle,
+            driverPlate: driverPlate,
+          ),
           const SizedBox(height: 20),
           _PickupNotesAndCallRow(onNotesTap: onNotesTap, onCallTap: () {}),
           const SizedBox(height: 28),
@@ -2555,9 +2756,19 @@ class _ArrivingExpandedContent extends StatelessWidget {
 }
 
 class _ArrivingDriverInfo extends StatelessWidget {
-  const _ArrivingDriverInfo({required this.leadingInset});
+  const _ArrivingDriverInfo({
+    required this.leadingInset,
+    this.driverName = 'Driver',
+    this.driverImage,
+    this.driverVehicle,
+    this.driverPlate,
+  });
 
   final double leadingInset;
+  final String driverName;
+  final String? driverImage;
+  final String? driverVehicle;
+  final String? driverPlate;
 
   @override
   Widget build(BuildContext context) {
@@ -2565,24 +2776,40 @@ class _ArrivingDriverInfo extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(width: leadingInset),
-        const CompatibleSvgPicture.asset(
-          'assets/images/driver_img.svg',
-          width: 56,
-          height: 62,
-          fit: BoxFit.contain,
-          semanticsLabel: 'Driver profile',
-        ),
+        if (driverImage != null && driverImage!.isNotEmpty)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(31),
+            child: Image.network(
+              driverImage!,
+              width: 56,
+              height: 62,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const CompatibleSvgPicture.asset(
+                'assets/images/driver_img.svg',
+                width: 56,
+                height: 62,
+              ),
+            ),
+          )
+        else
+          const CompatibleSvgPicture.asset(
+            'assets/images/driver_img.svg',
+            width: 56,
+            height: 62,
+            fit: BoxFit.contain,
+            semanticsLabel: 'Driver profile',
+          ),
         const SizedBox(width: 16),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 1),
-              const Text(
-                'Andrew Johnson',
+              Text(
+                driverName,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
+                style: const TextStyle(
                   color: AppColors.white,
                   fontSize: 15,
                   fontWeight: FontWeight.w500,
@@ -2591,46 +2818,38 @@ class _ArrivingDriverInfo extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 6),
-              RichText(
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                text: const TextSpan(
-                  style: TextStyle(
+              if (driverVehicle != null && driverVehicle!.isNotEmpty)
+                Text(
+                  driverVehicle!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF2C2D36),
                     fontSize: 10,
                     fontWeight: FontWeight.w600,
                     height: 1.2,
                     letterSpacing: 0,
                   ),
-                  children: [
-                    TextSpan(
-                      text: 'Green',
-                      style: TextStyle(color: Color(0xFF0FC204)),
-                    ),
-                    TextSpan(
-                      text: ' - Toyota Corolla Sedan',
-                      style: TextStyle(color: Color(0xFF2C2D36)),
-                    ),
-                  ],
                 ),
-              ),
               const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEDEDED),
-                  borderRadius: BorderRadius.circular(3),
-                ),
-                child: const Text(
-                  'BEN931AP',
-                  style: TextStyle(
-                    color: Color(0xFF565656),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    height: 1.1,
-                    letterSpacing: 0,
+              if (driverPlate != null && driverPlate!.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEDEDED),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: Text(
+                    driverPlate!,
+                    style: const TextStyle(
+                      color: Color(0xFF565656),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      height: 1.1,
+                      letterSpacing: 0,
+                    ),
                   ),
                 ),
-              ),
             ],
           ),
         ),
@@ -2713,6 +2932,10 @@ class _DriverFlowMap extends StatefulWidget {
     this.vehicleAsset = 'assets/images/Car img - select ride.svg',
     this.vehicleWidth = 58,
     this.vehicleHeight = 34,
+    this.nearbyDrivers = const [],
+    /// When true and [driverLatLng] is set, draw driver→pickup (on-the-way).
+    this.routeDriverToPickup = false,
+    this.onRouteDuration,
   });
 
   final LatLng? pickupLatLng;
@@ -2725,6 +2948,9 @@ class _DriverFlowMap extends StatefulWidget {
   final String vehicleAsset;
   final double vehicleWidth;
   final double vehicleHeight;
+  final List<NearbyDriver> nearbyDrivers;
+  final bool routeDriverToPickup;
+  final ValueChanged<Duration>? onRouteDuration;
 
   @override
   State<_DriverFlowMap> createState() => _DriverFlowMapState();
@@ -2745,8 +2971,16 @@ class _DriverFlowMapState extends State<_DriverFlowMap> {
   @override
   void didUpdateWidget(covariant _DriverFlowMap oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!_sameLatLng(widget.pickupLatLng, oldWidget.pickupLatLng) ||
-        !_sameLatLng(widget.destinationLatLng, oldWidget.destinationLatLng)) {
+    final endpointsChanged =
+        !_sameLatLng(widget.pickupLatLng, oldWidget.pickupLatLng) ||
+        !_sameLatLng(widget.destinationLatLng, oldWidget.destinationLatLng) ||
+        widget.routeDriverToPickup != oldWidget.routeDriverToPickup;
+    final driverMovedSignificantly = !_nearlySameLatLng(
+      widget.driverLatLng,
+      oldWidget.driverLatLng,
+    );
+    if (endpointsChanged ||
+        (widget.routeDriverToPickup && driverMovedSignificantly)) {
       _loadRoute();
     }
   }
@@ -2754,9 +2988,20 @@ class _DriverFlowMapState extends State<_DriverFlowMap> {
   Future<void> _loadRoute() async {
     final pickup = widget.pickupLatLng;
     final destination = widget.destinationLatLng;
+    final driver = widget.driverLatLng;
     final generation = ++_routeGeneration;
 
-    if (pickup == null || destination == null) {
+    final LatLng? origin;
+    final LatLng? target;
+    if (widget.routeDriverToPickup && driver != null && pickup != null) {
+      origin = driver;
+      target = pickup;
+    } else {
+      origin = pickup;
+      target = destination;
+    }
+
+    if (origin == null || target == null) {
       setState(() {
         _route = null;
         _isLoadingRoute = false;
@@ -2769,8 +3014,8 @@ class _DriverFlowMapState extends State<_DriverFlowMap> {
     });
 
     final route = await _routeService.routeBetween(
-      origin: pickup,
-      destination: destination,
+      origin: origin,
+      destination: target,
     );
 
     if (!mounted || generation != _routeGeneration) {
@@ -2781,6 +3026,7 @@ class _DriverFlowMapState extends State<_DriverFlowMap> {
       _route = route;
       _isLoadingRoute = false;
     });
+    widget.onRouteDuration?.call(route.duration);
   }
 
   bool _sameLatLng(LatLng? first, LatLng? second) {
@@ -2790,6 +3036,15 @@ class _DriverFlowMapState extends State<_DriverFlowMap> {
 
     return first.latitude == second.latitude &&
         first.longitude == second.longitude;
+  }
+
+  bool _nearlySameLatLng(LatLng? first, LatLng? second) {
+    if (first == null || second == null) {
+      return first == second;
+    }
+    // ~40m — avoid re-routing on every GPS tick.
+    return (first.latitude - second.latitude).abs() < 0.00036 &&
+        (first.longitude - second.longitude).abs() < 0.00036;
   }
 
   @override
@@ -2811,7 +3066,8 @@ class _DriverFlowMapState extends State<_DriverFlowMap> {
           vehicleMarkerWidth: widget.vehicleWidth,
           vehicleMarkerHeight: widget.vehicleHeight,
           cameraBoundsPadding: 132,
-          fitRouteInView: widget.driverLatLng == null,
+          fitRouteInView: true,
+          nearbyDrivers: widget.nearbyDrivers,
         ),
         if (_isLoadingRoute)
           Positioned(
@@ -3156,6 +3412,10 @@ class _DriverFoundPanel extends StatelessWidget {
     required this.onEditRoute,
     required this.onNotesTap,
     required this.onCancelRide,
+    this.driverName = 'Driver',
+    this.driverImage,
+    this.driverVehicle,
+    this.driverPlate,
   });
 
   final String pickupLocation;
@@ -3170,6 +3430,10 @@ class _DriverFoundPanel extends StatelessWidget {
   final VoidCallback onEditRoute;
   final VoidCallback onNotesTap;
   final VoidCallback onCancelRide;
+  final String driverName;
+  final String? driverImage;
+  final String? driverVehicle;
+  final String? driverPlate;
 
   String get _displayPickup {
     final value = pickupLocation.trim();
@@ -3229,6 +3493,10 @@ class _DriverFoundPanel extends StatelessWidget {
                   onEditRoute: onEditRoute,
                   onNotesTap: onNotesTap,
                   onCollapse: onCollapse,
+                  driverName: driverName,
+                  driverImage: driverImage,
+                  driverVehicle: driverVehicle,
+                  driverPlate: driverPlate,
                 )
               : _CollapsedDriverFoundContent(
                   key: const ValueKey('driver-found-collapsed-card'),
@@ -3320,6 +3588,10 @@ class _ExpandedDriverFoundContent extends StatelessWidget {
     required this.onEditRoute,
     required this.onNotesTap,
     required this.onCollapse,
+    this.driverName = 'Driver',
+    this.driverImage,
+    this.driverVehicle,
+    this.driverPlate,
   });
 
   final String pickupLocation;
@@ -3331,6 +3603,10 @@ class _ExpandedDriverFoundContent extends StatelessWidget {
   final VoidCallback onEditRoute;
   final VoidCallback onNotesTap;
   final VoidCallback onCollapse;
+  final String driverName;
+  final String? driverImage;
+  final String? driverVehicle;
+  final String? driverPlate;
 
   @override
   Widget build(BuildContext context) {
@@ -3371,7 +3647,12 @@ class _ExpandedDriverFoundContent extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 24),
-          const _ExpandedDriverInfo(),
+          _ExpandedDriverInfo(
+            driverName: driverName,
+            driverImage: driverImage,
+            driverVehicle: driverVehicle,
+            driverPlate: driverPlate,
+          ),
           const SizedBox(height: 20),
           _PickupNotesAndCallRow(onNotesTap: onNotesTap, onCallTap: () {}),
           const SizedBox(height: 28),
@@ -3484,7 +3765,17 @@ class _DriverSheetHandle extends StatelessWidget {
 }
 
 class _ExpandedDriverInfo extends StatelessWidget {
-  const _ExpandedDriverInfo();
+  const _ExpandedDriverInfo({
+    this.driverName = 'Driver',
+    this.driverImage,
+    this.driverVehicle,
+    this.driverPlate,
+  });
+
+  final String driverName;
+  final String? driverImage;
+  final String? driverVehicle;
+  final String? driverPlate;
 
   @override
   Widget build(BuildContext context) {
@@ -3492,24 +3783,40 @@ class _ExpandedDriverInfo extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(width: 40),
-        const CompatibleSvgPicture.asset(
-          'assets/images/driver_img.svg',
-          width: 56,
-          height: 62,
-          fit: BoxFit.contain,
-          semanticsLabel: 'Driver profile',
-        ),
+        if (driverImage != null && driverImage!.isNotEmpty)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(31),
+            child: Image.network(
+              driverImage!,
+              width: 56,
+              height: 62,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const CompatibleSvgPicture.asset(
+                'assets/images/driver_img.svg',
+                width: 56,
+                height: 62,
+              ),
+            ),
+          )
+        else
+          const CompatibleSvgPicture.asset(
+            'assets/images/driver_img.svg',
+            width: 56,
+            height: 62,
+            fit: BoxFit.contain,
+            semanticsLabel: 'Driver profile',
+          ),
         const SizedBox(width: 16),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 1),
-              const Text(
-                'Andrew Johnson',
+              Text(
+                driverName,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
+                style: const TextStyle(
                   color: AppColors.white,
                   fontSize: 15,
                   fontWeight: FontWeight.w500,
@@ -3518,46 +3825,38 @@ class _ExpandedDriverInfo extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 6),
-              RichText(
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                text: const TextSpan(
-                  style: TextStyle(
+              if (driverVehicle != null && driverVehicle!.isNotEmpty)
+                Text(
+                  driverVehicle!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF2C2D36),
                     fontSize: 10,
                     fontWeight: FontWeight.w600,
                     height: 1.2,
                     letterSpacing: 0,
                   ),
-                  children: [
-                    TextSpan(
-                      text: 'Green',
-                      style: TextStyle(color: Color(0xFF0FC204)),
-                    ),
-                    TextSpan(
-                      text: ' - Toyota Corolla Sedan',
-                      style: TextStyle(color: Color(0xFF2C2D36)),
-                    ),
-                  ],
                 ),
-              ),
               const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEDEDED),
-                  borderRadius: BorderRadius.circular(3),
-                ),
-                child: const Text(
-                  'BEN931AP',
-                  style: TextStyle(
-                    color: Color(0xFF565656),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    height: 1.1,
-                    letterSpacing: 0,
+              if (driverPlate != null && driverPlate!.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEDEDED),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: Text(
+                    driverPlate!,
+                    style: const TextStyle(
+                      color: Color(0xFF565656),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      height: 1.1,
+                      letterSpacing: 0,
+                    ),
                   ),
                 ),
-              ),
             ],
           ),
         ),
@@ -3569,8 +3868,16 @@ class _ExpandedDriverInfo extends StatelessWidget {
 String _shareRideMessage({
   required String pickupLocation,
   required String destination,
+  String driverName = 'my driver',
+  String? driverVehicle,
+  String? driverPlate,
 }) {
-  return 'I am taking a CitiRide trip with Andrew Johnson in a Toyota Corolla Sedan (BEN931AP). Pickup: $pickupLocation. Destination: $destination. Follow this ride in real time from my CitiRide app.';
+  final vehicleInfo = [
+    if (driverVehicle != null && driverVehicle.isNotEmpty) driverVehicle,
+    if (driverPlate != null && driverPlate.isNotEmpty) '($driverPlate)',
+  ].join(' ');
+  final vehiclePart = vehicleInfo.isNotEmpty ? ' in a $vehicleInfo' : '';
+  return 'I am taking a CitiRide trip with $driverName$vehiclePart. Pickup: $pickupLocation. Destination: $destination. Follow this ride in real time from my CitiRide app.';
 }
 
 Future<void> _showShareRideDetails(

@@ -5,7 +5,10 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_colors.dart';
+import '../../../core/auth/citiride_otp_client.dart';
 import '../../auth/presentation/widgets/auth_number_pad.dart';
+import '../../profile/domain/rider_profile.dart';
+import 'wallet_enrollment_store.dart';
 import 'wallet_flow_widgets.dart';
 
 enum WalletPasscodeMode { setup, confirm, unlock }
@@ -140,6 +143,18 @@ class _WalletPasscodeScreenState extends State<WalletPasscodeScreen> {
           return;
         }
         await WalletEnrollmentStore.instance.completeEnrollment(code);
+        final walletEmail =
+            RiderProfileStore.instance.profile.value.email.trim();
+        if (walletEmail.isNotEmpty) {
+          try {
+            await CitirideOtpClient().congratulateWalletCreated(
+              email: walletEmail,
+              role: 'rider',
+            );
+          } on Object {
+            // Enrollment already succeeded; email is best-effort.
+          }
+        }
         if (!mounted) {
           return;
         }

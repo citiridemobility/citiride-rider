@@ -87,6 +87,31 @@ class RideRepository {
         .map((snap) => DriverLocation.fromMap(snap.data()!));
   }
 
+  /// Live driver profile for the rider trip card (name / vehicle / photo).
+  Stream<DriverProfileSummary> watchDriverProfile(String driverId) {
+    return _db
+        .collection(FirestoreCollections.drivers)
+        .doc(driverId)
+        .snapshots()
+        .where((snap) => snap.exists && snap.data() != null)
+        .map((snap) => DriverProfileSummary.fromMap(snap.id, snap.data()!));
+  }
+
+  /// Nearby online drivers from the `drivers` collection.
+  /// Returns a live stream of driver positions for map display.
+  Stream<List<NearbyDriver>> watchNearbyDrivers() {
+    return _db
+        .collection(FirestoreCollections.drivers)
+        .where('status', isEqualTo: 'online')
+        .snapshots()
+        .map((snap) {
+          return snap.docs
+              .map((doc) => NearbyDriver.fromMap(doc.id, doc.data()))
+              .where((d) => d.lat != 0 && d.lng != 0)
+              .toList(growable: false);
+        });
+  }
+
   /// Open requests for this rider (useful if app restarts mid-search).
   Stream<List<LiveRide>> watchOpenRequestsForRider(String riderId) {
     return _rides

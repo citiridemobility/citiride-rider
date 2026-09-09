@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_colors.dart';
+import '../../../core/auth/citiride_wallet_client.dart';
 import '../../../shared/widgets/citiride_bottom_nav.dart';
 import '../../../shared/widgets/compatible_svg_picture.dart';
 import '../../profile/domain/rider_profile.dart';
@@ -39,35 +42,14 @@ class WalletHomeScreen extends StatefulWidget {
 }
 
 class _WalletHomeScreenState extends State<WalletHomeScreen> {
-  static const _transactions = <_WalletTransaction>[
-    _WalletTransaction(
-      type: _WalletTxnType.payment,
-      title: 'Payment to Ahmed',
-      timestamp: '2:30 PM • Fri, 21 Jun 2025',
-      amount: '₦435.54',
-      isCredit: false,
-      status: _WalletTxnFilter.completed,
-    ),
-    _WalletTransaction(
-      type: _WalletTxnType.topUp,
-      title: 'Wallet Top Up',
-      timestamp: '2:30 PM • Fri, 21 Jun 2025',
-      amount: '₦435.54',
-      isCredit: true,
-      status: _WalletTxnFilter.completed,
-    ),
-    _WalletTransaction(
-      type: _WalletTxnType.transfer,
-      title: 'Transfer to Osi',
-      timestamp: '2:30 PM • Fri, 21 Jun 2025',
-      amount: '₦435.54',
-      isCredit: false,
-      status: _WalletTxnFilter.pending,
-    ),
-  ];
+  final _walletClient = CitirideWalletClient();
 
+  List<_WalletTransaction> _transactions = const [];
   _WalletTxnFilter _filter = _WalletTxnFilter.all;
   bool _balanceVisible = true;
+  bool _loading = true;
+  double _availableBalance = 0;
+  String? _error;
 
   List<_WalletTransaction> get _filteredTransactions {
     if (_filter == _WalletTxnFilter.all) {
@@ -76,6 +58,115 @@ class _WalletHomeScreenState extends State<WalletHomeScreen> {
     return _transactions
         .where((transaction) => transaction.status == _filter)
         .toList();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_loadWallet());
+    });
+  }
+
+  String _formatMoney(double value) {
+    return '₦${value.toStringAsFixed(2).replaceAllMapped(
+          RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+          (m) => '${m[1]},',
+        )}';
+  }
+
+  String _formatTimestamp(DateTime? value) {
+    if (value == null) return '';
+    final local = value.toLocal();
+    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+    final minute = local.minute.toString().padLeft(2, '0');
+    final suffix = local.hour >= 12 ? 'PM' : 'AM';
+    const months = <String>[
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '$hour:$minute $suffix • ${months[local.month - 1]} ${local.day}, ${local.year}';
+  }
+
+  _WalletTxnType _mapType(String type) {
+    switch (type) {
+      case 'top_up':
+        return _WalletTxnType.topUp;
+      case 'withdrawal':
+        return _WalletTxnType.transfer;
+      default:
+        return _WalletTxnType.payment;
+    }
+  }
+
+  _WalletTxnFilter _mapStatus(String status) {
+    switch (status) {
+      case 'successful':
+      case 'success':
+        return _WalletTxnFilter.completed;
+      case 'reversed':
+        return _WalletTxnFilter.reversed;
+      default:
+        return _WalletTxnFilter.pending;
+    }
+  }
+
+  Future<void> _loadWallet() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final profile = RiderProfileStore.instance.profile.value;
+      final email = profile.email.trim().toLowerCase();
+      if (email.isNotEmpty) {
+        await _walletClient.ensureFundingAccount(
+          email: email,
+          fullName: profile.fullName,
+          phone: profile.phoneNumber,
+        );
+      }
+
+      final wallet = await _walletClient.fetchWallet();
+      final txns = await _walletClient.fetchTransactions();
+
+      if (!mounted) return;
+      setState(() {
+        _availableBalance = wallet.availableBalance;
+        _transactions = txns
+            .map(
+              (txn) => _WalletTransaction(
+                type: _mapType(txn.type),
+                title: txn.title,
+                timestamp: _formatTimestamp(txn.createdAt),
+                amount: _formatMoney(txn.amount),
+                isCredit: txn.type == 'top_up',
+                status: _mapStatus(txn.status),
+              ),
+            )
+            .toList();
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = error is CitirideWalletException
+            ? error.message
+            : 'Unable to load wallet.';
+      });
+    }
   }
 
   void _goBack() {
@@ -134,6 +225,7 @@ class _WalletHomeScreenState extends State<WalletHomeScreen> {
                       builder: (context, profile, _) {
                         return _WalletBalanceCard(
                           name: profile.displayName,
+                          balanceText: _formatMoney(_availableBalance),
                           balanceVisible: _balanceVisible,
                           onToggleVisibility: () {
                             setState(
@@ -144,6 +236,26 @@ class _WalletHomeScreenState extends State<WalletHomeScreen> {
                       },
                     ),
                   ),
+                  if (_error != null) ...[
+                    const SizedBox(height: 12),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Text(
+                        _error!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Color(0xFFFF8A8A),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (_loading) ...[
+                    const SizedBox(height: 16),
+                    const CircularProgressIndicator(
+                      color: AppColors.citirideYellow,
+                    ),
+                  ],
                   const SizedBox(height: 22),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -323,11 +435,13 @@ class _WalletHomeHeader extends StatelessWidget {
 class _WalletBalanceCard extends StatelessWidget {
   const _WalletBalanceCard({
     required this.name,
+    required this.balanceText,
     required this.balanceVisible,
     required this.onToggleVisibility,
   });
 
   final String name;
+  final String balanceText;
   final bool balanceVisible;
   final VoidCallback onToggleVisibility;
 
@@ -382,7 +496,7 @@ class _WalletBalanceCard extends StatelessWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          balanceVisible ? '₦150.00' : '••••••',
+                          balanceVisible ? balanceText : '••••••',
                           style: const TextStyle(
                             color: AppColors.white,
                             fontSize: 28,

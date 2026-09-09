@@ -68,7 +68,19 @@ class CompatibleSvgPicture extends StatelessWidget {
 
   static String normalizeSvgForRuntime(String svg) {
     return normalizeFigmaImagePatterns(
-      removeUnsupportedDropShadows(removeUnsupportedBlurGlows(svg)),
+      removeUnsupportedDropShadows(
+        removeUnsupportedBlurGlows(removeHorizontalFlipTransforms(svg)),
+      ),
+    );
+  }
+
+  /// Removes `matrix(-1 0 0 1 ...)` transforms that horizontally flip images,
+  /// which cause vehicle markers to appear inverted on the map.
+  @visibleForTesting
+  static String removeHorizontalFlipTransforms(String svg) {
+    return svg.replaceAll(
+      RegExp(r'\s*transform="matrix\(-1\s+0\s+0\s+1\s+[^"]*\)"'),
+      '',
     );
   }
 

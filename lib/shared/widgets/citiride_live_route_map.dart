@@ -10,6 +10,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../app/theme/app_colors.dart';
 import '../../core/location/citiride_route.dart';
+import '../../features/ride/domain/live_ride.dart';
 import 'citiride_google_map.dart';
 import 'citiride_location_status_pulse.dart';
 import 'compatible_svg_picture.dart';
@@ -20,7 +21,7 @@ class CitirideLiveRouteMap extends StatefulWidget {
     required this.fallbackSemanticsLabel,
     required this.routeSemanticsLabel,
     this.route,
-    this.showCars = true,
+    this.showCars = false,
     this.showPickupPulse = false,
     this.showPickupMarker = true,
     this.pickupLabelBuilder,
@@ -33,6 +34,7 @@ class CitirideLiveRouteMap extends StatefulWidget {
     this.vehicleMarkerHeight = 34,
     this.cameraBoundsPadding = 104,
     this.fitRouteInView = true,
+    this.nearbyDrivers = const [],
     this.onMapTap,
     this.onCameraMove,
     this.onCameraIdle,
@@ -47,6 +49,9 @@ class CitirideLiveRouteMap extends StatefulWidget {
   final String Function(CitirideRoute route)? pickupLabelBuilder;
   final String Function(CitirideRoute route)? destinationLabelBuilder;
   final double? vehicleProgress;
+  /// Real nearby driver positions from Firestore. When non-empty, used instead
+  /// of the hardcoded fake nearby cars.
+  final List<NearbyDriver> nearbyDrivers;
   /// Absolute GPS for the assigned driver (preferred over [vehicleProgress]).
   final LatLng? vehiclePosition;
   final double? vehicleHeading;
@@ -146,17 +151,16 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
     }
 
     try {
-      final pickup = await controller.getScreenCoordinate(route.origin);
-      final destination = await controller.getScreenCoordinate(
-        route.destination,
-      );
+      final pickup = await controller.getScreenCoordinate(route.routeStart);
+      final destination = await controller.getScreenCoordinate(route.routeEnd);
       if (!mounted || generation != _overlayGeneration) {
         return;
       }
 
-      // Web returns physical pixels; Flutter layout uses logical pixels.
+      // Mobile SDKs return physical pixels; Flutter layout uses logical pixels.
+      // The web implementation already returns CSS/logical pixels — don't scale.
       final dpr = MediaQuery.devicePixelRatioOf(context);
-      final scale = dpr <= 0 ? 1.0 : dpr;
+      final scale = kIsWeb || dpr <= 0 ? 1.0 : dpr;
 
       setState(() {
         _pickupScreen = Offset(pickup.x / scale, pickup.y / scale);
@@ -190,8 +194,8 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
     final route = widget.route;
     final pickupLabel = _pickupLabel(route);
     final destinationLabel = _destinationLabel(route);
-    // Screen-projected overlays only work with a live GoogleMap controller.
-    final useMapOverlays = !kIsWeb && _mapController != null;
+    // Screen-projected overlays need a live GoogleMap controller (mobile + web).
+    final useMapOverlays = _mapController != null;
     final showPickupOverlay =
         useMapOverlays &&
         route != null &&
@@ -215,8 +219,11 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
                 destinationLabel: destinationLabel,
               ),
               fallbackSemanticsLabel: widget.fallbackSemanticsLabel,
-              cameraTarget: widget.fitRouteInView ? route?.center : null,
-              cameraBounds: widget.fitRouteInView ? route?.latLngBounds : null,
+              cameraTarget: widget.vehiclePosition ??
+                  (widget.fitRouteInView ? route?.center : null),
+              cameraBounds: widget.fitRouteInView && widget.vehiclePosition == null
+                  ? route?.latLngBounds
+                  : null,
               cameraBoundsPadding: widget.cameraBoundsPadding,
               onMapCreated: _handleMapCreated,
               markers: {
@@ -227,22 +234,28 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
                     icon: icons.vehicle,
                     anchor: const Offset(0.5, 0.5),
                     flat: true,
-                    rotation: widget.vehicleHeading ?? 0,
+                    rotation: (widget.vehicleHeading ?? 0) + 180,
                     zIndexInt: 5,
                   ),
                 if (route != null && icons != null) ...{
-                  // Small pin under destination label (labels are Flutter overlays).
-                  Marker(
-                    markerId: const MarkerId('citiride-route-destination-pin'),
-                    position: route.destination,
-                    icon: icons.destinationPin,
-                    anchor: const Offset(0.5, 0.5),
-                    zIndexInt: 4,
-                  ),
-                  if (widget.showPickupMarker && !widget.showPickupPulse)
+                  // Prefer Flutter overlay (label + pin). Native pin only while
+                  // screen projection is still resolving.
+                  if (_destinationScreen == null)
+                    Marker(
+                      markerId: const MarkerId(
+                        'citiride-route-destination-pin',
+                      ),
+                      position: route.routeEnd,
+                      icon: icons.destinationPin,
+                      anchor: const Offset(0.5, 0.5),
+                      zIndexInt: 4,
+                    ),
+                  if (widget.showPickupMarker &&
+                      !widget.showPickupPulse &&
+                      _pickupScreen == null)
                     Marker(
                       markerId: const MarkerId('citiride-route-pickup-pin'),
-                      position: route.origin,
+                      position: route.routeStart,
                       icon: icons.pickupPin,
                       anchor: const Offset(0.5, 0.5),
                       zIndexInt: 3,
@@ -255,7 +268,10 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
                       widget.vehicleProgress!,
                     ),
                   if (widget.showCars && widget.vehiclePosition == null)
-                    ..._nearbyVehicleMarkers(route, icons.vehicle),
+                    ...(widget.nearbyDrivers.isNotEmpty
+                        ? _realNearbyVehicleMarkers(
+                            widget.nearbyDrivers, icons.vehicle)
+                        : _nearbyVehicleMarkers(route, icons.vehicle)),
                 },
               },
               onMapTap: widget.onMapTap,
@@ -347,6 +363,24 @@ class _RoutePointOverlay extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: const Color(0xFF2E2A2A),
                   borderRadius: BorderRadius.circular(1),
+                ),
+              ),
+            ),
+          // Anchor dot on the route endpoint (under the label stem).
+          if (!showPulse)
+            Positioned(
+              left: point.dx - 6,
+              top: point.dy - 6,
+              child: Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: AppColors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: AppColors.citirideYellow,
+                    width: 3,
+                  ),
                 ),
               ),
             ),
@@ -514,9 +548,27 @@ Marker _routeVehicleMarker(
     icon: icon,
     anchor: const Offset(0.5, 0.5),
     flat: true,
-    rotation: vehicle.heading,
+    rotation: vehicle.heading + 180,
     zIndexInt: 5,
   );
+}
+
+Set<Marker> _realNearbyVehicleMarkers(
+  List<NearbyDriver> drivers,
+  BitmapDescriptor icon,
+) {
+  return {
+    for (var i = 0; i < drivers.length; i += 1)
+      Marker(
+        markerId: MarkerId('citiride-nearby-driver-${drivers[i].driverId}'),
+        position: LatLng(drivers[i].lat, drivers[i].lng),
+        icon: icon,
+        anchor: const Offset(0.5, 0.5),
+        flat: true,
+        rotation: drivers[i].heading + 180,
+        zIndexInt: 2,
+      ),
+  };
 }
 
 Set<Marker> _nearbyVehicleMarkers(CitirideRoute? route, BitmapDescriptor icon) {
@@ -552,7 +604,7 @@ Set<Marker> _nearbyVehicleMarkers(CitirideRoute? route, BitmapDescriptor icon) {
         icon: icon,
         anchor: const Offset(0.5, 0.5),
         flat: true,
-        rotation: offsets[i].heading,
+        rotation: offsets[i].heading + 180,
         zIndexInt: 2,
       ),
   };

@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../core/auth/citiride_auth_service.dart';
 import '../../../core/auth/citiride_otp_client.dart';
+import '../../../core/auth/citiride_wallet_client.dart';
 import '../../auth/presentation/widgets/auth_number_pad.dart';
 import 'wallet_flow_widgets.dart';
 import 'wallet_withdraw_request.dart';
@@ -166,6 +167,13 @@ class _WalletWithdrawOtpScreenState extends State<WalletWithdrawOtpScreen> {
         context,
         message: 'Withdrawing to bank',
       );
+      await CitirideWalletClient().withdraw(
+        amount: widget.request.amount.toDouble(),
+        bankCode: widget.request.bank.paystackCode,
+        bankName: widget.request.bank.name,
+        accountNumber: widget.request.accountNumber,
+        accountName: widget.request.accountName,
+      );
       if (!mounted) {
         return;
       }
@@ -186,6 +194,13 @@ class _WalletWithdrawOtpScreenState extends State<WalletWithdrawOtpScreen> {
           context,
         ).showSnackBar(SnackBar(content: Text(error.message)));
       }
+    } on CitirideWalletException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
     } finally {
       if (mounted) {
         setState(() => _isSubmitting = false);

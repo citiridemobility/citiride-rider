@@ -2,12 +2,41 @@
 
 ## Endpoints
 
-### Rider (Flutter)
+### Rider (Flutter OTP)
 
 - `GET /health`
-- `POST /v1/otp/send` `{ "email": "user@example.com", "purpose": "login" | "wallet" | "reset_pin" }`
+- `POST /v1/otp/send` `{ "email": "user@example.com", "purpose": "login" | "wallet" | "reset_pin" | "withdraw" }`
 - `POST /v1/otp/verify` `{ "email": "user@example.com", "code": "123456", "purpose": "login" }`  
   → may include `firebaseCustomToken` (`role: rider`)
+- `POST /v1/wallet/congratulate` `{ "email": "user@example.com", "role": "rider" | "driver" }`  
+  → sends wallet-created congratulations email (`walletEmail`: `sent` | `skipped` | `failed`)
+
+### Rider wallet (Paystack)
+
+- `GET /v1/wallet/status`
+- `POST /v1/wallet/ensure` `{ email, fullName?, phone? }` → creates Paystack customer + dedicated virtual account
+- `GET /v1/wallet/me` → balance + funding account
+- `GET /v1/wallet/me/transactions`
+- `GET /v1/wallet/banks`
+- `POST /v1/wallet/bank/resolve` `{ accountNumber, bankCode }`
+- `POST /v1/wallet/withdraw` `{ amount, bankCode, bankName, accountNumber, accountName? }`
+- `POST /v1/paystack/webhook` ← configure this URL in Paystack Dashboard
+
+Auth: `Authorization: Bearer <Firebase ID token>` (preferred).  
+Dev fallback (`WALLET_ALLOW_USERID_FALLBACK=true`): `X-User-Id` header.
+
+Env:
+
+```env
+PAYSTACK_SECRET_KEY=sk_live_xxx
+PAYSTACK_DVA_BANK=wema-bank
+```
+
+Webhook URL example:
+
+`https://otp-api-production-db79.up.railway.app/v1/paystack/webhook`
+
+Listen for: `charge.success`, `transfer.success`, `transfer.failed`, `transfer.reversed`.
 
 ### Driver (React Native)
 

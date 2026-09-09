@@ -252,6 +252,7 @@ class CitirideAuthService {
             'email': email,
             'authProvider': 'email_otp',
             'riderId': docId,
+            'role': 'rider',
             'updatedAt': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true))
           .timeout(const Duration(seconds: 4));

@@ -13,10 +13,12 @@ class RideTripSnapshot {
   const RideTripSnapshot({
     required this.ride,
     this.driverLocation,
+    this.driverProfile,
   });
 
   final LiveRide ride;
   final DriverLocation? driverLocation;
+  final DriverProfileSummary? driverProfile;
 
   LatLng? get driverLatLng {
     final live = driverLocation;
@@ -33,6 +35,44 @@ class RideTripSnapshot {
   double? get driverHeading {
     return driverLocation?.heading ?? ride.driverLocation?.heading;
   }
+
+  /// Prefer the live `drivers/{id}` profile for the current [ride.driverId]
+  /// so a previous driver's name never sticks after reassignment.
+  String get driverName {
+    final fromProfile = driverProfile?.displayName?.trim();
+    if (fromProfile != null && fromProfile.isNotEmpty) {
+      return fromProfile;
+    }
+    final fromRide = ride.driverName?.trim();
+    if (fromRide != null && fromRide.isNotEmpty) {
+      return fromRide;
+    }
+    return 'Driver';
+  }
+
+  String? get driverImage {
+    final fromProfile = driverProfile?.photoUri?.trim();
+    if (fromProfile != null && fromProfile.isNotEmpty) {
+      return fromProfile;
+    }
+    return ride.driverImage;
+  }
+
+  String? get driverVehicle {
+    final fromProfile = driverProfile?.vehicleLabel?.trim();
+    if (fromProfile != null && fromProfile.isNotEmpty) {
+      return fromProfile;
+    }
+    return ride.driverVehicle;
+  }
+
+  String? get driverPlate {
+    final fromProfile = driverProfile?.plateNumber?.trim();
+    if (fromProfile != null && fromProfile.isNotEmpty) {
+      return fromProfile;
+    }
+    return ride.driverPlate;
+  }
 }
 
 /// Watches a ride doc (+ optional driverLocations/{driverId}) for the trip UI.
@@ -47,6 +87,7 @@ class RideTripSession {
 
   StreamSubscription<LiveRide>? _rideSub;
   StreamSubscription<DriverLocation>? _locationSub;
+  StreamSubscription<DriverProfileSummary>? _profileSub;
   String? _watchingDriverId;
   RideTripSnapshot? _latest;
   final _controller = StreamController<RideTripSnapshot>.broadcast();
@@ -58,22 +99,29 @@ class RideTripSession {
     _rideSub?.cancel();
     _rideSub = _repository.watchRide(rideId).listen(
       (ride) {
+        final sameDriver =
+            ride.driverId != null &&
+            ride.driverId!.trim().isNotEmpty &&
+            ride.driverId == _watchingDriverId;
         _latest = RideTripSnapshot(
           ride: ride,
-          driverLocation: _latest?.driverLocation,
+          driverLocation: sameDriver ? _latest?.driverLocation : null,
+          driverProfile: sameDriver ? _latest?.driverProfile : null,
         );
         _controller.add(_latest!);
-        _syncDriverLocationWatch(ride.driverId);
+        _syncDriverWatches(ride.driverId);
       },
       onError: _controller.addError,
     );
   }
 
-  void _syncDriverLocationWatch(String? driverId) {
+  void _syncDriverWatches(String? driverId) {
     final clean = driverId?.trim();
     if (clean == null || clean.isEmpty) {
       unawaited(_locationSub?.cancel() ?? Future<void>.value());
+      unawaited(_profileSub?.cancel() ?? Future<void>.value());
       _locationSub = null;
+      _profileSub = null;
       _watchingDriverId = null;
       return;
     }
@@ -82,17 +130,41 @@ class RideTripSession {
     }
     _watchingDriverId = clean;
     unawaited(_locationSub?.cancel() ?? Future<void>.value());
+    unawaited(_profileSub?.cancel() ?? Future<void>.value());
+
     _locationSub = _repository.watchDriverLocation(clean).listen(
       (location) {
         final ride = _latest?.ride;
-        if (ride == null) {
+        if (ride == null || ride.driverId != clean) {
           return;
         }
-        _latest = RideTripSnapshot(ride: ride, driverLocation: location);
+        _latest = RideTripSnapshot(
+          ride: ride,
+          driverLocation: location,
+          driverProfile: _latest?.driverProfile,
+        );
         _controller.add(_latest!);
       },
       onError: (_) {
         // Driver location is optional; ride status still drives the UI.
+      },
+    );
+
+    _profileSub = _repository.watchDriverProfile(clean).listen(
+      (profile) {
+        final ride = _latest?.ride;
+        if (ride == null || ride.driverId != clean) {
+          return;
+        }
+        _latest = RideTripSnapshot(
+          ride: ride,
+          driverLocation: _latest?.driverLocation,
+          driverProfile: profile,
+        );
+        _controller.add(_latest!);
+      },
+      onError: (_) {
+        // Profile is optional; fall back to ride-doc fields.
       },
     );
   }
@@ -102,6 +174,7 @@ class RideTripSession {
   Future<void> dispose() async {
     await _rideSub?.cancel();
     await _locationSub?.cancel();
+    await _profileSub?.cancel();
     await _controller.close();
   }
 }

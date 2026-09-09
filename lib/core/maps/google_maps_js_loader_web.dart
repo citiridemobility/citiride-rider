@@ -18,7 +18,11 @@ Future<bool> ensureGoogleMapsJsSdk({required String apiKey}) async {
   }
 
   final completer = _loadCompleter ??= Completer<bool>();
-  if (web.document.getElementById(_scriptId) != null) {
+
+  // index.html (or a prior call) may already have injected Maps JS. Never load
+  // the API twice — that breaks MapTypeId / white tiles on Flutter web.
+  if (web.document.getElementById(_scriptId) != null ||
+      _hasMapsScriptTag()) {
     return _waitForSdk(completer);
   }
 
@@ -48,6 +52,20 @@ Future<bool> ensureGoogleMapsJsSdk({required String apiKey}) async {
 
   web.document.head?.appendChild(script);
   return _waitForSdk(completer);
+}
+
+bool _hasMapsScriptTag() {
+  final scripts = web.document.getElementsByTagName('script');
+  final length = scripts.length;
+  for (var i = 0; i < length; i += 1) {
+    final node = scripts.item(i);
+    if (node == null) continue;
+    final src = (node as web.HTMLScriptElement).src;
+    if (src.contains('maps.googleapis.com/maps/api/js')) {
+      return true;
+    }
+  }
+  return false;
 }
 
 Future<bool> _waitForSdk(Completer<bool> completer) async {

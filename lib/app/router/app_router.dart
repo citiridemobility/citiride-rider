@@ -284,7 +284,7 @@ abstract final class AppRouter {
           builder: (context, state) {
             final bank = state.extra is WalletBank
                 ? state.extra! as WalletBank
-                : walletBanks.first;
+                : walletBanksFallback.first;
             return WalletWithdrawScreen(initialBank: bank);
           },
         ),
@@ -321,7 +321,7 @@ abstract final class AppRouter {
             final request = state.extra is WalletWithdrawRequest
                 ? state.extra! as WalletWithdrawRequest
                 : WalletWithdrawRequest(
-                    bank: walletBanks.first,
+                    bank: walletBanksFallback.first,
                     accountNumber: '',
                     amount: 0,
                   );
@@ -334,7 +334,7 @@ abstract final class AppRouter {
           builder: (context, state) {
             final extra = state.extra;
             WalletWithdrawRequest request = WalletWithdrawRequest(
-              bank: walletBanks.first,
+              bank: walletBanksFallback.first,
               accountNumber: '',
               amount: 0,
             );
