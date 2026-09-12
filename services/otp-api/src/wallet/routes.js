@@ -8,11 +8,13 @@ import {
   verifyPaystackSignature,
 } from '../paystack/client.js';
 import {
+  confirmRideCashPayment,
   ensureFundingAccount,
   getOrCreateWallet,
   handleChargeSuccess,
   handleTransferEvent,
   listTransactions,
+  payRideFare,
   requeryWalletFunding,
   requestWithdrawal,
   simulateTestDeposit,
@@ -212,6 +214,66 @@ walletRouter.post('/test/credit', async (req, res) => {
     return res.status(400).json({
       error: 'test_credit_failed',
       message: error.message || 'Unable to simulate test deposit',
+    });
+  }
+});
+
+walletRouter.post('/ride/pay', async (req, res) => {
+  try {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+
+    const rideId = String(req.body?.rideId || '').trim();
+    if (!rideId) {
+      return res.status(400).json({
+        error: 'invalid_ride',
+        message: 'Ride id is required.',
+      });
+    }
+
+    const result = await payRideFare({
+      riderId: auth.uid,
+      rideId,
+    });
+    return res.json({ ok: true, ...result });
+  } catch (error) {
+    console.error('wallet ride pay failed', error);
+    const code = error.code || 'ride_pay_failed';
+    const status =
+      code === 'not_found' ? 404 : code === 'forbidden' ? 403 : 400;
+    return res.status(status).json({
+      error: code === 'insufficient_funds' ? 'insufficient_funds' : code,
+      message: error.message || 'Unable to pay for this ride',
+    });
+  }
+});
+
+walletRouter.post('/ride/confirm-cash', async (req, res) => {
+  try {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+
+    const rideId = String(req.body?.rideId || '').trim();
+    if (!rideId) {
+      return res.status(400).json({
+        error: 'invalid_ride',
+        message: 'Ride id is required.',
+      });
+    }
+
+    const result = await confirmRideCashPayment({
+      riderId: auth.uid,
+      rideId,
+    });
+    return res.json({ ok: true, ...result });
+  } catch (error) {
+    console.error('wallet ride cash confirm failed', error);
+    const code = error.code || 'ride_cash_failed';
+    const status =
+      code === 'not_found' ? 404 : code === 'forbidden' ? 403 : 400;
+    return res.status(status).json({
+      error: code,
+      message: error.message || 'Unable to confirm cash payment',
     });
   }
 });

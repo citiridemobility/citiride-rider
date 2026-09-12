@@ -143,3 +143,80 @@ export async function createDriverCustomToken(email) {
   return { token, uid };
 }
 
+async function authUserExists(uid) {
+  if (!uid || !initFirebaseAdmin()) return false;
+  try {
+    await admin.auth().getUser(uid);
+    return true;
+  } catch (error) {
+    if (error?.code === 'auth/user-not-found') return false;
+    console.warn('authUserExists failed:', error?.code || error);
+    return false;
+  }
+}
+
+async function firestoreDocExists(collection, uid) {
+  if (!uid || !initFirebaseAdmin()) return false;
+  try {
+    const snap = await admin.firestore().collection(collection).doc(uid).get();
+    return snap.exists;
+  } catch (error) {
+    console.warn('firestoreDocExists failed:', error?.message || error);
+    return false;
+  }
+}
+
+async function authEmailMatchesRole(email, role) {
+  if (!initFirebaseAdmin()) return false;
+  try {
+    const user = await admin.auth().getUserByEmail(email);
+    const claimsRole = user.customClaims?.role;
+    if (role === 'driver') {
+      return (
+        claimsRole === 'driver' || String(user.uid || '').startsWith('drv_')
+      );
+    }
+    return (
+      claimsRole === 'rider' || !String(user.uid || '').startsWith('drv_')
+    );
+  } catch (error) {
+    if (error?.code === 'auth/user-not-found') return false;
+    console.warn('authEmailMatchesRole failed:', error?.code || error);
+    return false;
+  }
+}
+
+async function firestoreEmailExists(collection, email) {
+  if (!email || !initFirebaseAdmin()) return false;
+  try {
+    const snap = await admin
+      .firestore()
+      .collection(collection)
+      .where('email', '==', email)
+      .limit(1)
+      .get();
+    return !snap.empty;
+  } catch (error) {
+    console.warn('firestoreEmailExists failed:', error?.message || error);
+    return false;
+  }
+}
+
+export async function riderAccountExists(email) {
+  const uid = riderUidFromEmail(email);
+  if (!uid) return false;
+  if (await authUserExists(uid)) return true;
+  if (await firestoreDocExists('riders', uid)) return true;
+  if (await authEmailMatchesRole(email, 'rider')) return true;
+  return firestoreEmailExists('riders', email);
+}
+
+export async function driverAccountExists(email) {
+  const uid = driverUidFromEmail(email);
+  if (!uid) return false;
+  if (await authUserExists(uid)) return true;
+  if (await firestoreDocExists('drivers', uid)) return true;
+  if (await authEmailMatchesRole(email, 'driver')) return true;
+  return firestoreEmailExists('drivers', email);
+}
+

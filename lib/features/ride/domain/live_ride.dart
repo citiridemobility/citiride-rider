@@ -163,6 +163,8 @@ class LiveRide {
     this.driverPlate,
     this.rideType = 'regular',
     this.paymentMethod = 'cash',
+    this.paymentStatus = 'unpaid',
+    this.paidAt,
     this.createdAt,
     this.updatedAt,
     this.lastDeclinedAt,
@@ -182,9 +184,13 @@ class LiveRide {
   final String? driverPlate;
   final String rideType;
   final String paymentMethod;
+  final String paymentStatus;
+  final Timestamp? paidAt;
   final Timestamp? createdAt;
   final Timestamp? updatedAt;
   final Timestamp? lastDeclinedAt;
+
+  bool get isPaid => paymentStatus.toLowerCase() == 'paid';
 
   factory LiveRide.fromMap(String id, Map<String, dynamic> data) {
     final rawDriverLocation = data['driverLocation'];
@@ -216,6 +222,11 @@ class LiveRide {
           (data['paymentMethod'] as String?)?.trim().isNotEmpty == true
           ? (data['paymentMethod'] as String).trim()
           : 'cash',
+      paymentStatus:
+          (data['paymentStatus'] as String?)?.trim().toLowerCase() == 'paid'
+          ? 'paid'
+          : 'unpaid',
+      paidAt: timestampFrom(data['paidAt']),
       createdAt: timestampFrom(data['createdAt']),
       updatedAt: timestampFrom(data['updatedAt']),
       lastDeclinedAt: timestampFrom(data['lastDeclinedAt']),
@@ -376,6 +387,7 @@ Map<String, Object?> newRideWriteMap(NewRideRequest request) {
     'fare': {'estimated': request.estimatedFare, 'final': null},
     'rideType': request.rideType,
     'paymentMethod': request.paymentMethod,
+    'paymentStatus': 'unpaid',
     'riderName': request.riderName,
     if (request.riderImage != null) 'riderImage': request.riderImage,
     'riderRating': '5.0',

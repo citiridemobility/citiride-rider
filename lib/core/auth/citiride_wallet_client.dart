@@ -81,6 +81,10 @@ class CitirideWalletTransaction {
     required this.title,
     required this.amount,
     required this.status,
+    this.balanceAfter,
+    this.provider,
+    this.providerReference,
+    this.metadata = const {},
     this.createdAt,
   });
 
@@ -90,9 +94,22 @@ class CitirideWalletTransaction {
   final String title;
   final double amount;
   final String status;
+  final double? balanceAfter;
+  final String? provider;
+  final String? providerReference;
+  final Map<String, dynamic> metadata;
   final DateTime? createdAt;
 
+  bool get isCredit {
+    return switch (type) {
+      'top_up' || 'ride_earning' => true,
+      'withdrawal' || 'ride_payment' => false,
+      _ => amount > 0,
+    };
+  }
+
   factory CitirideWalletTransaction.fromJson(Map<String, dynamic> json) {
+    final rawMetadata = json['metadata'];
     return CitirideWalletTransaction(
       id: (json['id'] as String?) ?? '',
       reference: (json['reference'] as String?) ?? '',
@@ -100,6 +117,12 @@ class CitirideWalletTransaction {
       title: (json['title'] as String?) ?? 'Transaction',
       amount: (json['amount'] as num?)?.toDouble() ?? 0,
       status: (json['status'] as String?) ?? 'pending',
+      balanceAfter: (json['balanceAfter'] as num?)?.toDouble(),
+      provider: (json['provider'] as String?)?.trim(),
+      providerReference: (json['providerReference'] as String?)?.trim(),
+      metadata: rawMetadata is Map
+          ? Map<String, dynamic>.from(rawMetadata)
+          : const {},
       createdAt: DateTime.tryParse((json['createdAt'] as String?) ?? ''),
     );
   }
@@ -170,7 +193,10 @@ class CitirideWalletClient {
     if (list is! List) return const [];
     return list
         .whereType<Map>()
-        .map((item) => WalletBank.fromPaystackJson(Map<String, dynamic>.from(item)))
+        .map(
+          (item) =>
+              WalletBank.fromPaystackJson(Map<String, dynamic>.from(item)),
+        )
         .where((bank) => bank.paystackCode.isNotEmpty)
         .toList()
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
@@ -206,9 +232,23 @@ class CitirideWalletClient {
     });
     return (
       accountName: (body['accountName'] as String?)?.trim() ?? '',
-      accountNumber: (body['accountNumber'] as String?)?.trim() ?? accountNumber,
+      accountNumber:
+          (body['accountNumber'] as String?)?.trim() ?? accountNumber,
       bankCode: (body['bankCode'] as String?)?.trim() ?? bankCode,
     );
+  }
+
+  Future<CitirideWallet?> payRide({required String rideId}) async {
+    final body = await _post('/v1/wallet/ride/pay', {'rideId': rideId});
+    final walletJson = body['wallet'];
+    if (walletJson is Map<String, dynamic>) {
+      return CitirideWallet.fromJson(walletJson);
+    }
+    return null;
+  }
+
+  Future<void> confirmCashRide({required String rideId}) async {
+    await _post('/v1/wallet/ride/confirm-cash', {'rideId': rideId});
   }
 
   Future<Map<String, dynamic>> withdraw({
@@ -244,19 +284,14 @@ class CitirideWalletClient {
     final headers = await _headers();
     final response = await _client.post(
       Uri.parse('$_baseUrl$path'),
-      headers: {
-        ...headers,
-        'Content-Type': 'application/json',
-      },
+      headers: {...headers, 'Content-Type': 'application/json'},
       body: jsonEncode(body),
     );
     return _decode(response);
   }
 
   Future<Map<String, String>> _headers() async {
-    final headers = <String, String>{
-      'Accept': 'application/json',
-    };
+    final headers = <String, String>{'Accept': 'application/json'};
 
     if (Firebase.apps.isNotEmpty) {
       final user = FirebaseAuth.instance.currentUser;
@@ -288,9 +323,7 @@ class CitirideWalletClient {
     Map<String, dynamic> body;
     try {
       final decoded = jsonDecode(response.body);
-      body = decoded is Map<String, dynamic>
-          ? decoded
-          : <String, dynamic>{};
+      body = decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
     } catch (_) {
       body = <String, dynamic>{};
     }

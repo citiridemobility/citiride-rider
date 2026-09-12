@@ -18,6 +18,7 @@ class EnterCodeScreen extends StatefulWidget {
     this.phoneDigits = '',
     this.phoneNumber,
     this.email,
+    this.intent = 'signup',
     this.authMethod = CitirideAuthMethod.phone,
     this.verificationId,
     this.resendToken,
@@ -27,6 +28,7 @@ class EnterCodeScreen extends StatefulWidget {
   final String phoneDigits;
   final String? phoneNumber;
   final String? email;
+  final String intent;
   final CitirideAuthMethod authMethod;
   final String? verificationId;
   final int? resendToken;
@@ -184,6 +186,14 @@ class _EnterCodeScreenState extends State<EnterCodeScreen> {
       _result = _CodeResult.correct;
     });
 
+    if (widget.intent == 'login') {
+      _dismissLoadingDialog();
+      if (mounted) {
+        context.go('/set-location');
+      }
+      return;
+    }
+
     await _showSignupSuccessFlow();
 
     if (!mounted) {
@@ -331,7 +341,16 @@ class _EnterCodeScreenState extends State<EnterCodeScreen> {
       return;
     }
 
-    context.go('/enter-number');
+    final email = _emailAddress;
+    context.go(
+      Uri(
+        path: '/enter-number',
+        queryParameters: {
+          'intent': widget.intent == 'login' ? 'login' : 'signup',
+          if (email.isNotEmpty) 'email': email,
+        },
+      ).toString(),
+    );
   }
 
   String get _emailAddress {

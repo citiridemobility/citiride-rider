@@ -8,6 +8,8 @@ Set these on the `otp-api` service (never in Flutter):
 - For local/test QA use `sk_test_...`
 - `PAYSTACK_DVA_BANK` = preferred DVA bank slug (`wema-bank` or `titan-paystack`; test uses `test-bank`)
 - Keep existing `FIREBASE_SERVICE_ACCOUNT_JSON` so ID tokens and Firestore ledger work
+- `CITIRIDE_COMMISSION_PERCENT` = platform take on each trip (default **20**)
+- `CITIRIDE_PLATFORM_WALLET_ID` = ledger wallet that receives commission (default `citiride_platform`)
 
 Optional (local/dev only):
 

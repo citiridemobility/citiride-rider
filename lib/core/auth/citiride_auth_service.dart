@@ -152,6 +152,26 @@ class CitirideAuthService {
     }
   }
 
+  Future<bool> riderAccountExists({required String email}) async {
+    final cleanEmail = _cleanEmail(email);
+    if (cleanEmail == null || !_isValidEmail(cleanEmail)) {
+      throw const CitirideAuthException(
+        'Enter a valid email address.',
+        code: 'invalid-email',
+      );
+    }
+
+    if (_forceDemoEmailOtp) {
+      return false;
+    }
+
+    try {
+      return await _otpClient.riderAccountExists(email: cleanEmail);
+    } on Object {
+      return false;
+    }
+  }
+
   Future<CitirideAuthResult> confirmEmailCode({
     required String code,
     required String email,

@@ -30,6 +30,8 @@ Env:
 ```env
 PAYSTACK_SECRET_KEY=sk_live_xxx
 PAYSTACK_DVA_BANK=wema-bank
+CITIRIDE_COMMISSION_PERCENT=20
+CITIRIDE_PLATFORM_WALLET_ID=citiride_platform
 ```
 
 Webhook URL example:

@@ -44,3 +44,23 @@ export function toKobo(nairaAmount) {
 export function fromKobo(kobo) {
   return Number(kobo || 0) / 100;
 }
+
+/** Platform take rate. Override with CITIRIDE_COMMISSION_PERCENT (0–100). */
+export function commissionPercent() {
+  const n = Number(process.env.CITIRIDE_COMMISSION_PERCENT ?? 20);
+  if (!Number.isFinite(n) || n < 0) return 20;
+  return Math.min(100, n);
+}
+
+export function platformWalletId() {
+  const id = String(process.env.CITIRIDE_PLATFORM_WALLET_ID || 'citiride_platform').trim();
+  return id || 'citiride_platform';
+}
+
+export function splitFareKobo(fareKobo, percent = commissionPercent()) {
+  const safeFare = Math.max(0, Math.round(Number(fareKobo) || 0));
+  const rate = Math.min(100, Math.max(0, Number(percent) || 0));
+  const commissionKobo = Math.round(safeFare * (rate / 100));
+  const driverKobo = Math.max(0, safeFare - commissionKobo);
+  return { fareKobo: safeFare, commissionKobo, driverKobo, percent: rate };
+}

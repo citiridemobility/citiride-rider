@@ -141,7 +141,7 @@ class _WelcomeActions extends StatelessWidget {
           width: double.infinity,
           height: 48,
           child: FilledButton(
-            onPressed: () => context.go('/enter-number'),
+            onPressed: () => context.go('/enter-number?intent=signup'),
             style: FilledButton.styleFrom(
               backgroundColor: AppColors.citirideYellow,
               foregroundColor: AppColors.citirideBlack,
@@ -165,7 +165,7 @@ class _WelcomeActions extends StatelessWidget {
           width: double.infinity,
           height: 48,
           child: OutlinedButton(
-            onPressed: () => context.go('/enter-number'),
+            onPressed: () => context.go('/enter-number?intent=login'),
             style: OutlinedButton.styleFrom(
               foregroundColor: AppColors.citirideYellow,
               side: const BorderSide(color: AppColors.citirideYellow),

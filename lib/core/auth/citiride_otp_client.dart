@@ -64,6 +64,19 @@ class CitirideOtpClient {
     throw _mapError(response);
   }
 
+  Future<bool> riderAccountExists({required String email}) async {
+    try {
+      final response = await _post('/v1/otp/account-status', {'email': email});
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final body = _decodeMap(response.body);
+        return body['exists'] == true;
+      }
+    } on Object {
+      // Fail open so a lookup outage does not block a first-time signup.
+    }
+    return false;
+  }
+
   Future<CitirideOtpVerifyResult> verifyOtp({
     required String email,
     required String code,

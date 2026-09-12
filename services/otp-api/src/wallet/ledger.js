@@ -12,6 +12,8 @@ import {
   fromKobo,
   getFirestore,
   newReference,
+  platformWalletId,
+  splitFareKobo,
   toKobo,
 } from './util.js';
 
@@ -108,7 +110,10 @@ export async function simulateTestDeposit(userId, amountNaira = 1000) {
   return getOrCreateWallet(userId);
 }
 
-export async function getOrCreateWallet(userId, { email, fullName, phone } = {}) {
+export async function getOrCreateWallet(
+  userId,
+  { email, fullName, phone, walletType } = {},
+) {
   const db = getFirestore();
   const ref = db.collection(WALLETS).doc(userId);
   const snap = await ref.get();
@@ -119,7 +124,9 @@ export async function getOrCreateWallet(userId, { email, fullName, phone } = {})
   const now = new Date();
   const payload = {
     userId,
-    walletType: 'rider',
+    walletType: ['driver', 'platform'].includes(walletType)
+      ? walletType
+      : 'rider',
     availableBalanceKobo: 0,
     pendingBalanceKobo: 0,
     currency: 'NGN',
@@ -218,6 +225,7 @@ export async function listTransactions(userId, { limit = 30 } = {}) {
         title: data.title || data.type,
         provider: data.provider || null,
         providerReference: data.providerReference || null,
+        metadata: data.metadata || {},
         createdAt: data.createdAt?.toDate?.()?.toISOString?.() || null,
         _sort: data.createdAt?.toMillis?.() || 0,
       };
@@ -648,4 +656,345 @@ export async function handleTransferEvent(eventName, eventData) {
   });
 
   return { ok: true, reference, success, failed };
+}
+
+function assertRidePayable(ride, riderId) {
+  if (String(ride.riderId || '') !== String(riderId)) {
+    const error = new Error('This ride does not belong to you');
+    error.code = 'forbidden';
+    throw error;
+  }
+  const driverId = String(ride.driverId || '').trim();
+  if (!driverId) {
+    throw new Error('Driver is not assigned yet');
+  }
+  const status = String(ride.status || '');
+  if (status !== 'confirm_fare' && status !== 'in_progress') {
+    throw new Error('This trip is not ready for payment');
+  }
+  return driverId;
+}
+
+function rideFareNaira(ride) {
+  return Number(ride.fare?.final ?? ride.fare?.estimated ?? 0);
+}
+
+function fareSplitForRide(ride) {
+  return splitFareKobo(toKobo(rideFareNaira(ride)));
+}
+
+function ridePayoutStamp({
+  amountNaira,
+  percent,
+  commissionNaira,
+  driverNaira,
+}) {
+  return {
+    paymentAmount: amountNaira,
+    'fare.final': amountNaira,
+    commissionPercent: percent,
+    commissionAmount: commissionNaira,
+    driverPayout: driverNaira,
+  };
+}
+
+function ridePayResult(ride, extras = {}) {
+  const split = fareSplitForRide(ride);
+  return {
+    amount: Number(ride.paymentAmount ?? fromKobo(split.fareKobo)),
+    commission: Number(ride.commissionAmount ?? fromKobo(split.commissionKobo)),
+    driverPayout: Number(ride.driverPayout ?? fromKobo(split.driverKobo)),
+    commissionPercent: Number(ride.commissionPercent ?? split.percent),
+    ...extras,
+  };
+}
+
+/**
+ * Debit the rider the full trip fare, credit the driver the net after
+ * CitiRide commission, and credit the platform wallet the commission.
+ * Idempotent once `rides/{rideId}.paymentStatus === 'paid'`.
+ */
+export async function payRideFare({ riderId, rideId }) {
+  const db = getFirestore();
+  const rideRef = db.collection('rides').doc(String(rideId));
+  const rideSnap = await rideRef.get();
+  if (!rideSnap.exists) {
+    const error = new Error('Ride not found');
+    error.code = 'not_found';
+    throw error;
+  }
+
+  const ride = rideSnap.data() || {};
+  const driverId = assertRidePayable(ride, riderId);
+
+  if (String(ride.paymentStatus || '') === 'paid') {
+    const wallet = await getOrCreateWallet(riderId);
+    return ridePayResult(ride, { alreadyPaid: true, wallet });
+  }
+
+  const { fareKobo, commissionKobo, driverKobo, percent } = fareSplitForRide(ride);
+  const amountNaira = fromKobo(fareKobo);
+  const commissionNaira = fromKobo(commissionKobo);
+  const driverNaira = fromKobo(driverKobo);
+  if (!Number.isFinite(fareKobo) || fareKobo < 100) {
+    throw new Error('Invalid fare amount');
+  }
+
+  const platformId = platformWalletId();
+  await getOrCreateWallet(riderId);
+  await getOrCreateWallet(driverId, { walletType: 'driver' });
+  if (commissionKobo > 0) {
+    await getOrCreateWallet(platformId, { walletType: 'platform' });
+  }
+
+  const debitRefId = `ride_pay_${rideId}_out`;
+  const creditRefId = `ride_pay_${rideId}_in`;
+  const commissionRefId = `ride_pay_${rideId}_commission`;
+  const eventRef = db.collection(PROCESSED).doc(`ride_pay_${rideId}`);
+
+  await db.runTransaction(async (tx) => {
+    const eventSnap = await tx.get(eventRef);
+    const rideNow = await tx.get(rideRef);
+    const riderWalletRef = db.collection(WALLETS).doc(riderId);
+    const driverWalletRef = db.collection(WALLETS).doc(driverId);
+    const platformWalletRef = db.collection(WALLETS).doc(platformId);
+    const riderWalletSnap = await tx.get(riderWalletRef);
+    const driverWalletSnap = await tx.get(driverWalletRef);
+    const platformWalletSnap =
+      commissionKobo > 0 ? await tx.get(platformWalletRef) : null;
+
+    const rideData = rideNow.data() || {};
+    if (eventSnap.exists || String(rideData.paymentStatus || '') === 'paid') {
+      return;
+    }
+    if (!riderWalletSnap.exists) {
+      throw new Error('Rider wallet not found');
+    }
+    if (!driverWalletSnap.exists) {
+      throw new Error('Driver wallet not found');
+    }
+    if (commissionKobo > 0 && !platformWalletSnap?.exists) {
+      throw new Error('Platform wallet not found');
+    }
+
+    const riderWallet = riderWalletSnap.data() || {};
+    const driverWallet = driverWalletSnap.data() || {};
+    const riderBefore = Number(riderWallet.availableBalanceKobo || 0);
+    if (riderBefore < fareKobo) {
+      const error = new Error(
+        'Insufficient wallet balance. Add money and try again.',
+      );
+      error.code = 'insufficient_funds';
+      throw error;
+    }
+
+    const driverBefore = Number(driverWallet.availableBalanceKobo || 0);
+    const platformBefore = Number(
+      platformWalletSnap?.data()?.availableBalanceKobo || 0,
+    );
+    const now = new Date();
+    const splitMeta = {
+      rideId,
+      fareKobo,
+      commissionKobo,
+      driverKobo,
+      commissionPercent: percent,
+    };
+
+    tx.set(
+      riderWalletRef,
+      {
+        availableBalanceKobo: riderBefore - fareKobo,
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+    tx.set(
+      driverWalletRef,
+      {
+        availableBalanceKobo: driverBefore + driverKobo,
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+
+    tx.set(db.collection(TXNS).doc(debitRefId), {
+      walletId: riderId,
+      userId: riderId,
+      reference: debitRefId,
+      type: 'ride_payment',
+      title: 'Ride payment',
+      amountKobo: -fareKobo,
+      balanceBeforeKobo: riderBefore,
+      balanceAfterKobo: riderBefore - fareKobo,
+      status: 'successful',
+      provider: 'citiride',
+      metadata: { ...splitMeta, counterpartyId: driverId },
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    tx.set(db.collection(TXNS).doc(creditRefId), {
+      walletId: driverId,
+      userId: driverId,
+      reference: creditRefId,
+      type: 'ride_earning',
+      title: 'Ride earning',
+      amountKobo: driverKobo,
+      balanceBeforeKobo: driverBefore,
+      balanceAfterKobo: driverBefore + driverKobo,
+      status: 'successful',
+      provider: 'citiride',
+      metadata: { ...splitMeta, counterpartyId: riderId },
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    if (commissionKobo > 0 && platformWalletSnap) {
+      tx.set(
+        platformWalletRef,
+        {
+          availableBalanceKobo: platformBefore + commissionKobo,
+          updatedAt: now,
+        },
+        { merge: true },
+      );
+      tx.set(db.collection(TXNS).doc(commissionRefId), {
+        walletId: platformId,
+        userId: platformId,
+        reference: commissionRefId,
+        type: 'ride_commission',
+        title: 'Ride commission',
+        amountKobo: commissionKobo,
+        balanceBeforeKobo: platformBefore,
+        balanceAfterKobo: platformBefore + commissionKobo,
+        status: 'successful',
+        provider: 'citiride',
+        metadata: { ...splitMeta, riderId, driverId },
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    tx.set(
+      rideRef,
+      {
+        paymentStatus: 'paid',
+        paymentChannel: 'wallet',
+        paidAt: now,
+        paymentReference: debitRefId,
+        ...ridePayoutStamp({
+          amountNaira,
+          percent,
+          commissionNaira,
+          driverNaira,
+        }),
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+
+    tx.set(eventRef, {
+      rideId,
+      riderId,
+      driverId,
+      amountKobo: fareKobo,
+      commissionKobo,
+      driverKobo,
+      commissionPercent: percent,
+      createdAt: now,
+    });
+  });
+
+  const wallet = await getOrCreateWallet(riderId);
+  return ridePayResult(
+    {
+      paymentAmount: amountNaira,
+      commissionAmount: commissionNaira,
+      driverPayout: driverNaira,
+      commissionPercent: percent,
+      fare: { final: amountNaira },
+    },
+    { alreadyPaid: false, wallet },
+  );
+}
+
+/**
+ * Cash trips: rider confirms they paid the driver without moving ledger funds.
+ */
+export async function confirmRideCashPayment({ riderId, rideId }) {
+  const db = getFirestore();
+  const rideRef = db.collection('rides').doc(String(rideId));
+  const rideSnap = await rideRef.get();
+  if (!rideSnap.exists) {
+    const error = new Error('Ride not found');
+    error.code = 'not_found';
+    throw error;
+  }
+
+  const ride = rideSnap.data() || {};
+  assertRidePayable(ride, riderId);
+
+  const method = String(ride.paymentMethod || 'cash').toLowerCase();
+  if (method !== 'cash') {
+    throw new Error('This trip is set to wallet. Pay from your CitiRide wallet.');
+  }
+
+  if (String(ride.paymentStatus || '') === 'paid') {
+    return ridePayResult(ride, { alreadyPaid: true });
+  }
+
+  const { fareKobo, commissionKobo, driverKobo, percent } = fareSplitForRide(ride);
+  const amountNaira = fromKobo(fareKobo);
+  const commissionNaira = fromKobo(commissionKobo);
+  const driverNaira = fromKobo(driverKobo);
+  const now = new Date();
+  const eventRef = db.collection(PROCESSED).doc(`ride_cash_${rideId}`);
+
+  await db.runTransaction(async (tx) => {
+    const eventSnap = await tx.get(eventRef);
+    const rideNow = await tx.get(rideRef);
+    const rideData = rideNow.data() || {};
+    if (eventSnap.exists || String(rideData.paymentStatus || '') === 'paid') {
+      return;
+    }
+
+    tx.set(
+      rideRef,
+      {
+        paymentStatus: 'paid',
+        paymentChannel: 'cash',
+        paidAt: now,
+        ...ridePayoutStamp({
+          amountNaira,
+          percent,
+          commissionNaira,
+          driverNaira,
+        }),
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+    tx.set(eventRef, {
+      rideId,
+      riderId,
+      channel: 'cash',
+      amountKobo: fareKobo,
+      commissionKobo,
+      driverKobo,
+      commissionPercent: percent,
+      createdAt: now,
+    });
+  });
+
+  return ridePayResult(
+    {
+      paymentAmount: amountNaira,
+      commissionAmount: commissionNaira,
+      driverPayout: driverNaira,
+      commissionPercent: percent,
+      fare: { final: amountNaira },
+    },
+    { alreadyPaid: false },
+  );
 }

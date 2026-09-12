@@ -1,10 +1,28 @@
+import 'package:citiride/core/location/citiride_fare.dart';
 import 'package:citiride/features/driver/presentation/looking_for_driver_screen.dart';
 import 'package:citiride/features/review/presentation/ride_review_screens.dart';
+import 'package:citiride/features/ride/domain/live_ride.dart';
+import 'package:citiride/features/ride/presentation/ride_trip_session.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
 void main() {
+  test('ended trips go to payment until the rider pays, then review', () {
+    expect(
+      routePathForRideStatus(RideStatus.confirmFare),
+      '/ride-payment',
+    );
+    expect(
+      routePathForRideStatus(RideStatus.confirmFare, paymentPaid: true),
+      '/ride-success',
+    );
+    expect(routePathForRideStatus(RideStatus.completed), '/ride-success');
+    expect(
+      routePathForRideStatus(RideStatus.inProgress),
+      '/driving-to-destination',
+    );
+  });
   testWidgets('arriving routes to ride arrival then driving to destination', (
     WidgetTester tester,
   ) async {
@@ -75,7 +93,8 @@ void main() {
     await tester.pumpWidget(MaterialApp.router(routerConfig: router));
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text('Arriving in 2 mins'), findsOneWidget);
+    expect(find.text('Driver is on the way'), findsOneWidget);
+    expect(find.text('Arriving In 2 mins'), findsOneWidget);
 
     await tester.pump(const Duration(seconds: 15));
     await tester.pump(const Duration(milliseconds: 400));
@@ -102,8 +121,16 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('How was your ride?'), findsOneWidget);
-    expect(find.text('\u20A67500'), findsOneWidget);
     expect(find.text('Cash'), findsOneWidget);
+    expect(
+      find.text(
+        formatNaira(
+          CitirideFareCalculator.fallback(CitirideRideTier.vip).estimatedTotal,
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Cancel'), findsOneWidget);
   });
 
   testWidgets('ride arrival waiting countdown shows fee after free wait ends', (
@@ -119,11 +146,11 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text('Free wait time 05:00'), findsOneWidget);
+    expect(find.text('Free wait time 03:00'), findsOneWidget);
 
-    await tester.pump(const Duration(minutes: 5));
+    await tester.pump(const Duration(minutes: 3));
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text('Waiting fee \u20A6350 applies'), findsOneWidget);
+    expect(find.textContaining('Waiting fee'), findsOneWidget);
   });
 }

@@ -46,6 +46,10 @@ service cloud.firestore {
         && resource.data.driverId == authUid();
     }
 
+    function isUnassigned(data) {
+      return data.driverId == null || data.driverId == '';
+    }
+
     match /rides/{rideId} {
       // Open requests must stay readable so drivers can discover them.
       // Tighten to geo-queries / Cloud Functions once driver Auth is live.
@@ -74,14 +78,14 @@ service cloud.firestore {
             && resource.data.status == 'requested'
             && request.resource.data.status in ['accepted', 'arriving']
             && request.resource.data.driverId == authUid()
-            && (resource.data.driverId == null
+            && (isUnassigned(resource.data)
                 || resource.data.driverId == authUid()))
           // Driver declines an open or offered request
           || (isSignedIn()
             && resource.data.status == 'requested'
             && request.resource.data.status == 'requested'
-            && request.resource.data.driverId == null
-            && (resource.data.driverId == null
+            && isUnassigned(request.resource.data)
+            && (isUnassigned(resource.data)
                 || resource.data.driverId == authUid())
             && request.resource.data.diff(resource.data).affectedKeys()
                 .hasOnly([

@@ -180,14 +180,18 @@ class RideTripSession {
 }
 
 /// Maps Firestore [RideStatus] → rider app route path.
-String? routePathForRideStatus(RideStatus status) {
+String? routePathForRideStatus(
+  RideStatus status, {
+  bool paymentPaid = false,
+}) {
   return switch (status) {
     RideStatus.requested => '/looking-for-driver',
     RideStatus.accepted => '/driver-found',
     RideStatus.arriving => '/arriving',
     RideStatus.waiting => '/ride-arrival',
     RideStatus.inProgress => '/driving-to-destination',
-    RideStatus.confirmFare || RideStatus.completed => '/ride-success',
+    RideStatus.confirmFare => paymentPaid ? '/ride-success' : '/ride-payment',
+    RideStatus.completed => '/ride-success',
     RideStatus.cancelled => '/select-ride',
   };
 }
@@ -239,7 +243,10 @@ void navigateForRideSnapshot({
     return;
   }
 
-  final path = routePathForRideStatus(ride.status);
+  final path = routePathForRideStatus(
+    ride.status,
+    paymentPaid: ride.isPaid,
+  );
   if (path == null || !context.mounted) {
     return;
   }

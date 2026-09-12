@@ -133,6 +133,22 @@ class _RideSuccessScreenState extends State<RideSuccessScreen> {
                       ),
                     ),
                     Positioned(
+                      right: 10,
+                      top: 20,
+                      child: TextButton(
+                        key: const ValueKey('ride-success-cancel-button'),
+                        onPressed: _close,
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(
+                            color: Color(0xFF8F8F8F),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
                       left: 22,
                       right: 22,
                       top: 108,
@@ -145,64 +161,67 @@ class _RideSuccessScreenState extends State<RideSuccessScreen> {
                     Positioned.fill(
                       top: constraints.maxHeight * 0.35,
                       bottom: 128 + MediaQuery.paddingOf(context).bottom,
-                      child: Column(
-                        children: [
-                          const Text(
-                            'How was your ride?',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: AppColors.white,
-                              fontSize: 17,
-                              fontWeight: FontWeight.w600,
-                              height: 1.2,
-                              letterSpacing: 0,
+                      child: SingleChildScrollView(
+                        child: Column(
+                          children: [
+                            const Text(
+                              'How was your ride?',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: AppColors.white,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w600,
+                                height: 1.2,
+                                letterSpacing: 0,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 16),
-                          _RideRatingSelector(
-                            rating: _rating,
-                            onChanged: (rating) {
-                              setState(() {
-                                _rating = rating;
-                              });
-                            },
-                          ),
-                          AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 160),
-                            child: _ratingText.isEmpty
-                                ? const SizedBox(height: 28)
-                                : Padding(
-                                    key: ValueKey(_ratingText),
-                                    padding: const EdgeInsets.only(top: 16),
-                                    child: Text(
-                                      _ratingText,
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        color: Color(0xFF8F8F8F),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w400,
-                                        height: 1,
-                                        letterSpacing: 0,
+                            const SizedBox(height: 16),
+                            _RideRatingSelector(
+                              rating: _rating,
+                              onChanged: (rating) {
+                                setState(() {
+                                  _rating = rating;
+                                });
+                              },
+                            ),
+                            AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 160),
+                              child: _ratingText.isEmpty
+                                  ? const SizedBox(height: 28)
+                                  : Padding(
+                                      key: ValueKey(_ratingText),
+                                      padding: const EdgeInsets.only(top: 16),
+                                      child: Text(
+                                        _ratingText,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          color: Color(0xFF8F8F8F),
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w400,
+                                          height: 1,
+                                          letterSpacing: 0,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                          ),
-                          const Spacer(),
-                          _TipOptionsRow(
-                            options: _tipOptions,
-                            selectedTip: _selectedTip,
-                            onSelected: (tip) {
-                              setState(() => _selectedTip = tip);
-                            },
-                          ),
-                          const SizedBox(height: 16),
-                          _SuggestedCommentPills(
-                            comments: _suggestedComments,
-                            selectedComment: _selectedComment,
-                            onSelected: _selectComment,
-                            onAdditionalComment: _openReview,
-                          ),
-                        ],
+                            ),
+                            const SizedBox(height: 20),
+                            _TipOptionsRow(
+                              options: _tipOptions,
+                              selectedTip: _selectedTip,
+                              onSelected: (tip) {
+                                setState(() => _selectedTip = tip);
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            _SuggestedCommentPills(
+                              comments: _suggestedComments,
+                              selectedComment: _selectedComment,
+                              onSelected: _selectComment,
+                              onAdditionalComment: _openReview,
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                        ),
                       ),
                     ),
                     Positioned(
@@ -290,6 +309,10 @@ class _ReviewScreenState extends State<ReviewScreen> {
     context.go('/review-submitted');
   }
 
+  void _cancel() {
+    context.go('/home');
+  }
+
   @override
   Widget build(BuildContext context) {
     return _DarkReviewScaffold(
@@ -321,6 +344,22 @@ class _ReviewScreenState extends State<ReviewScreen> {
                           Icons.arrow_back,
                           color: AppColors.white,
                           size: 24,
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      right: 10,
+                      top: 20,
+                      child: TextButton(
+                        key: const ValueKey('manual-review-cancel-button'),
+                        onPressed: _cancel,
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(
+                            color: Color(0xFF8F8F8F),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ),

@@ -19,6 +19,7 @@ import '../../features/rides/domain/ride_history.dart';
 import '../../features/rides/presentation/ride_details_screen.dart';
 import '../../features/rides/presentation/rides_screen.dart';
 import '../../features/route/presentation/route_selection_screen.dart';
+import '../../features/ride/presentation/ride_payment_screen.dart';
 import '../../features/ride/presentation/select_ride_screen.dart';
 import '../../features/settings/presentation/settings_screens.dart';
 
@@ -77,7 +78,14 @@ abstract final class AppRouter {
           path: '/enter-number',
           name: 'enter-number',
           builder: (context, state) {
-            return const EnterNumberScreen();
+            final query = state.uri.queryParameters;
+            return EnterNumberScreen(
+              key: ValueKey(
+                'enter-number-${query['intent'] ?? 'signup'}-${query['email'] ?? ''}',
+              ),
+              intent: query['intent'] == 'login' ? 'login' : 'signup',
+              initialEmail: query['email'],
+            );
           },
         ),
         GoRoute(
@@ -91,6 +99,7 @@ abstract final class AppRouter {
               phoneDigits: query['phone'] ?? '',
               phoneNumber: query['phoneE164'],
               email: query['email'],
+              intent: query['intent'] == 'login' ? 'login' : 'signup',
               authMethod: CitirideAuthMethod.values.firstWhere(
                 (method) => method.name == query['authMethod'],
                 orElse: () => CitirideAuthMethod.phone,
@@ -586,6 +595,20 @@ abstract final class AppRouter {
             return CancelRideReasonScreen(
               rideType: state.uri.queryParameters['ride'] ?? 'regular',
               paymentMethod: state.uri.queryParameters['payment'] ?? 'cash',
+            );
+          },
+        ),
+        GoRoute(
+          path: '/ride-payment',
+          name: 'ride-payment',
+          builder: (context, state) {
+            return RidePaymentScreen(
+              rideType: state.uri.queryParameters['ride'] ?? 'regular',
+              paymentMethod: state.uri.queryParameters['payment'] ?? 'cash',
+              estimatedFare: parseEstimatedFareQuery(
+                state.uri.queryParameters['fare'],
+              ),
+              rideId: state.uri.queryParameters['rideId'],
             );
           },
         ),

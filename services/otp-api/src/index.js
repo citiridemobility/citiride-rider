@@ -21,7 +21,9 @@ import {
 import {
   createDriverCustomToken,
   createRiderCustomToken,
+  driverAccountExists,
   hasFirebaseAdmin,
+  riderAccountExists,
 } from './firebase-admin.js';
 import { hasPaystack } from './paystack/client.js';
 import { handlePaystackWebhook, walletRouter } from './wallet/routes.js';
@@ -101,6 +103,46 @@ app.get('/v1/email-preview', (_req, res) => {
   });
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(html);
+});
+
+app.post('/v1/otp/account-status', async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    if (!email) {
+      return res.status(400).json({
+        error: 'invalid_email',
+        message: 'Enter a valid email address.',
+      });
+    }
+    const exists = await riderAccountExists(email);
+    return res.json({ ok: true, email, exists, role: 'rider' });
+  } catch (error) {
+    console.error('rider account status failed', error);
+    return res.status(500).json({
+      error: 'server_error',
+      message: 'Unable to check this email. Please try again.',
+    });
+  }
+});
+
+app.post('/v1/driver/otp/account-status', async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    if (!email) {
+      return res.status(400).json({
+        error: 'invalid_email',
+        message: 'Enter a valid email address.',
+      });
+    }
+    const exists = await driverAccountExists(email);
+    return res.json({ ok: true, email, exists, role: 'driver' });
+  } catch (error) {
+    console.error('driver account status failed', error);
+    return res.status(500).json({
+      error: 'server_error',
+      message: 'Unable to check this email. Please try again.',
+    });
+  }
 });
 
 app.post('/v1/otp/send', async (req, res) => {

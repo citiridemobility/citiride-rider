@@ -12,7 +12,14 @@ import '../../../shared/widgets/compatible_svg_picture.dart';
 import 'widgets/auth_number_pad.dart';
 
 class EnterNumberScreen extends StatefulWidget {
-  const EnterNumberScreen({super.key});
+  const EnterNumberScreen({
+    super.key,
+    this.intent = 'signup',
+    this.initialEmail,
+  });
+
+  final String intent;
+  final String? initialEmail;
 
   @override
   State<EnterNumberScreen> createState() => _EnterNumberScreenState();
@@ -58,6 +65,11 @@ class _EnterNumberScreenState extends State<EnterNumberScreen> {
   @override
   void initState() {
     super.initState();
+    final initial = widget.initialEmail?.trim() ?? '';
+    if (initial.isNotEmpty) {
+      _emailController.text = initial;
+      _email = initial;
+    }
     _emailController.addListener(_handleEmailChanged);
   }
 
@@ -173,6 +185,24 @@ class _EnterNumberScreenState extends State<EnterNumberScreen> {
       }
 
       final email = _email.trim().toLowerCase();
+      final isLogin = widget.intent == 'login';
+
+      if (!isLogin) {
+        final exists = await _authService.riderAccountExists(email: email);
+        if (!mounted) {
+          return;
+        }
+        if (exists) {
+          if (mounted) {
+            setState(() {
+              _isSendingCode = false;
+            });
+          }
+          await _showExistingAccountDialog(email);
+          return;
+        }
+      }
+
       await _authService.startEmailVerification(email: email);
 
       final profile = RiderProfileStore.instance.profile.value;
@@ -187,6 +217,7 @@ class _EnterNumberScreenState extends State<EnterNumberScreen> {
         queryParameters: {
           'authMethod': CitirideAuthMethod.email.name,
           'email': email,
+          'intent': isLogin ? 'login' : 'signup',
         },
       ).toString();
 
@@ -206,6 +237,52 @@ class _EnterNumberScreenState extends State<EnterNumberScreen> {
         });
       }
     }
+  }
+
+  Future<void> _showExistingAccountDialog(String email) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1C1C1C),
+          title: const Text(
+            'Account already exists',
+            style: TextStyle(color: AppColors.white, fontWeight: FontWeight.w700),
+          ),
+          content: const Text(
+            'You\'ve already signed up with this email. Log in with a code we\'ll send to your inbox.',
+            style: TextStyle(color: Color(0xFFB3B3B3), height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text(
+                'Log in',
+                style: TextStyle(
+                  color: AppColors.citirideYellow,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    context.go(
+      Uri(
+        path: '/enter-number',
+        queryParameters: {
+          'intent': 'login',
+          'email': email,
+        },
+      ).toString(),
+    );
   }
 
   static bool _isValidEmail(String email) {
@@ -267,7 +344,11 @@ class _EnterNumberScreenState extends State<EnterNumberScreen> {
                 child: Column(
                   children: [
                     SizedBox(height: compact ? 15 : 24),
-                    _EnterNumberHeader(entryMode: _entryMode, onBack: _goBack),
+                    _EnterNumberHeader(
+                      entryMode: _entryMode,
+                      isLogin: widget.intent == 'login',
+                      onBack: _goBack,
+                    ),
                     SizedBox(height: compact ? 18 : 24),
                     if (_isPhoneAuth) ...[
                       _PhoneNumberInput(
@@ -415,10 +496,15 @@ class _EnterNumberScreenState extends State<EnterNumberScreen> {
 }
 
 class _EnterNumberHeader extends StatelessWidget {
-  const _EnterNumberHeader({required this.entryMode, required this.onBack});
+  const _EnterNumberHeader({
+    required this.entryMode,
+    required this.onBack,
+    this.isLogin = false,
+  });
 
   final _AuthEntryMode entryMode;
   final VoidCallback onBack;
+  final bool isLogin;
 
   bool get _isEmailAuth => entryMode == _AuthEntryMode.email;
 
@@ -457,7 +543,9 @@ class _EnterNumberHeader extends StatelessWidget {
               const SizedBox(height: 10),
               Text(
                 _isEmailAuth
-                    ? 'We\'ll send you a one-time password to your\nemail address'
+                    ? (isLogin
+                        ? 'Log in with the one-time password we send\nto your email'
+                        : 'We\'ll send you a one-time password to your\nemail address')
                     : 'We\'ll send you a verification code on your\nWhatsapp',
                 textAlign: TextAlign.center,
                 style: const TextStyle(
