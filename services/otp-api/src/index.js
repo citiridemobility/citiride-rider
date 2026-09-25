@@ -18,6 +18,7 @@ import {
   driverWalletCreatedEmailHtml,
   driverWalletCreatedEmailText,
 } from './emails/templates.js';
+import { handleDriverPhotoUpload } from './driver-photo.js';
 import {
   createDriverCustomToken,
   createRiderCustomToken,
@@ -64,13 +65,24 @@ const welcomeCooldownMs = Number(
 );
 
 app.use(cors());
-app.use(
-  express.json({
-    limit: '64kb',
-    verify: (req, _res, buf) => {
-      req.rawBody = buf;
-    },
-  }),
+const jsonParser = express.json({
+  limit: '64kb',
+  verify: (req, _res, buf) => {
+    req.rawBody = buf;
+  },
+});
+app.use((req, res, next) => {
+  if (req.path === '/v1/driver/photo') {
+    return next();
+  }
+  return jsonParser(req, res, next);
+});
+app.post(
+  '/v1/driver/photo',
+  express.json({ limit: '6mb' }),
+  (req, res, next) => {
+    handleDriverPhotoUpload(req, res).catch(next);
+  },
 );
 app.use('/assets', express.static(publicDir, { maxAge: '7d' }));
 
@@ -561,6 +573,17 @@ app.post('/v1/driver/welcome', async (req, res) => {
       message: 'Unable to send driver welcome email.',
     });
   }
+});
+
+app.use((err, _req, res, _next) => {
+  console.error(err);
+  if (res.headersSent) {
+    return;
+  }
+  res.status(500).json({
+    error: 'server_error',
+    message: 'Please try again.',
+  });
 });
 
 app.listen(port, () => {

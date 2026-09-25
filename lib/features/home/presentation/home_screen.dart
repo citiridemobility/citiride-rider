@@ -8,7 +8,9 @@ import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../../app/theme/app_colors.dart';
+import '../../../core/location/citiride_place.dart';
 import '../../../core/location/live_location_service.dart';
+import '../../../core/location/location_search_history_store.dart';
 import '../../../core/location/places_service.dart';
 import '../../../core/location/route_query.dart';
 import '../../profile/domain/rider_profile.dart';
@@ -45,6 +47,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _locationLabel = 'Set location';
   _HomeSheetPosition _sheetPosition = _HomeSheetPosition.collapsed;
   double _sheetDragDelta = 0;
+  List<CitiridePlace> _recentPlaces = const [];
 
   bool _isProfileSidebarOpen = false;
   bool _isNotificationsPeekOpen = false;
@@ -66,10 +69,22 @@ class _HomeScreenState extends State<HomeScreen> {
           : label;
     }
     if (_isRunningWidgetTest) {
+      unawaited(_loadRecentPlaces());
       return;
     }
 
+    unawaited(_loadRecentPlaces());
     unawaited(_startLocationTracking());
+  }
+
+  Future<void> _loadRecentPlaces() async {
+    final places = await const LocationSearchHistoryStore().load();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _recentPlaces = places;
+    });
   }
 
   @override
@@ -156,7 +171,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  void _openRouteSearch() {
+  void _openRouteSearch({CitiridePlace? destination}) {
     final location = _currentLocation;
     final queryParameters = <String, String>{};
     if (location != null) {
@@ -172,9 +187,19 @@ class _HomeScreenState extends State<HomeScreen> {
         ...latLngToQuery('pickup', location),
       });
     }
+    if (destination != null && destination.title.trim().isNotEmpty) {
+      queryParameters['destination'] = destination.title.trim();
+      queryParameters.addAll(latLngToQuery('destination', destination.location));
+    }
 
-    context.push(
-      Uri(path: '/route', queryParameters: queryParameters).toString(),
+    unawaited(
+      context
+          .push(Uri(path: '/route', queryParameters: queryParameters).toString())
+          .then((_) {
+            if (mounted) {
+              unawaited(_loadRecentPlaces());
+            }
+          }),
     );
   }
 
@@ -305,7 +330,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       onVerticalDragEnd: _handleDragEnd,
                       child: _HomeSearchPanel(
                         position: _sheetPosition,
+                        recentPlaces: _recentPlaces,
                         onSearchTap: _openRouteSearch,
+                        onRecentTap: (place) =>
+                            _openRouteSearch(destination: place),
                       ),
                     ),
                   ),
@@ -1075,15 +1103,23 @@ class _HomeBottomNavigation extends StatelessWidget {
 }
 
 class _HomeSearchPanel extends StatelessWidget {
-  const _HomeSearchPanel({required this.position, required this.onSearchTap});
+  const _HomeSearchPanel({
+    required this.position,
+    required this.recentPlaces,
+    required this.onSearchTap,
+    required this.onRecentTap,
+  });
 
   final _HomeSheetPosition position;
+  final List<CitiridePlace> recentPlaces;
   final VoidCallback onSearchTap;
+  final ValueChanged<CitiridePlace> onRecentTap;
 
   bool get _showSuggestions => position != _HomeSheetPosition.collapsed;
 
   @override
   Widget build(BuildContext context) {
+    final visibleRecents = recentPlaces.take(3).toList(growable: false);
     return Container(
       decoration: BoxDecoration(
         color: AppColors.citirideBlack,
@@ -1112,29 +1148,24 @@ class _HomeSearchPanel extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 18),
                 child: _SearchField(onTap: onSearchTap),
               ),
-              if (_showSuggestions) ...[
+              if (_showSuggestions && visibleRecents.isNotEmpty) ...[
                 const SizedBox(height: 20),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 17),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 17),
                   child: Column(
                     children: [
-                      _DestinationSuggestion(
-                        iconAsset: 'assets/images/Time_Icon.svg',
-                        title: 'Benin City',
-                        subtitle: 'Nigeria',
-                      ),
-                      SizedBox(height: 18),
-                      _DestinationSuggestion(
-                        iconAsset: 'assets/images/Location_Icon.svg',
-                        title: 'Afemai Transport Company',
-                        subtitle: 'Dawson Road, Benin City',
-                      ),
-                      SizedBox(height: 18),
-                      _DestinationSuggestion(
-                        iconAsset: 'assets/images/Car_Icon.svg',
-                        title: 'Ring Road Bus Terminal',
-                        subtitle: 'Oba Market Road, Benin City 300102',
-                      ),
+                      for (var index = 0; index < visibleRecents.length; index++) ...[
+                        _DestinationSuggestion(
+                          iconAsset: index == 0
+                              ? 'assets/images/Time_Icon.svg'
+                              : 'assets/images/Location_Icon.svg',
+                          title: visibleRecents[index].title,
+                          subtitle: visibleRecents[index].subtitle ?? 'Nigeria',
+                          onTap: () => onRecentTap(visibleRecents[index]),
+                        ),
+                        if (index != visibleRecents.length - 1)
+                          const SizedBox(height: 18),
+                      ],
                     ],
                   ),
                 ),
@@ -1206,55 +1237,61 @@ class _DestinationSuggestion extends StatelessWidget {
     required this.iconAsset,
     required this.title,
     required this.subtitle,
+    required this.onTap,
   });
 
   final String iconAsset;
   final String title;
   final String subtitle;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 32,
-          height: 32,
-          child: CompatibleSvgPicture.asset(iconAsset, fit: BoxFit.contain),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppColors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  height: 1.2,
-                  letterSpacing: 0,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                subtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xFF8F8F8F),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w400,
-                  height: 1.2,
-                  letterSpacing: 0,
-                ),
-              ),
-            ],
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Row(
+        children: [
+          SizedBox(
+            width: 32,
+            height: 32,
+            child: CompatibleSvgPicture.asset(iconAsset, fit: BoxFit.contain),
           ),
-        ),
-      ],
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    height: 1.2,
+                    letterSpacing: 0,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF8F8F8F),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w400,
+                    height: 1.2,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

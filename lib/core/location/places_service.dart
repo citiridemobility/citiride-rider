@@ -57,7 +57,7 @@ class CitiridePlacesService {
   }) async {
     final query = input.trim();
     if (query.length < 2) {
-      return defaultPlaces();
+      return const [];
     }
 
     final apiKey = await GoogleMapsConfig.runtimeApiKey();

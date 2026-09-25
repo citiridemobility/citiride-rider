@@ -3,6 +3,10 @@
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
+  "storage": {
+    "rules": "storage.rules",
+    "bucket": "citiride-d7743-driver-photos"
+  },
   "flutter": {
     "platforms": {
       "android": {

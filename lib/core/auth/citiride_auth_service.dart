@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 
 import 'citiride_otp_client.dart';
 import '../../features/ride/domain/live_ride.dart';
@@ -83,6 +84,9 @@ class CitirideAuthService {
 
   bool get _hasFirebaseApp => Firebase.apps.isNotEmpty;
 
+  bool get _useDemoEmailOtp =>
+      _forceDemoEmailOtp || (kDebugMode && !_hasFirebaseApp);
+
   /// Current Firebase Auth uid when signed in after email OTP.
   String? get currentUid =>
       _hasFirebaseApp ? _firebaseAuth.currentUser?.uid : null;
@@ -132,7 +136,7 @@ class CitirideAuthService {
       );
     }
 
-    if (_forceDemoEmailOtp) {
+    if (_useDemoEmailOtp) {
       return CitirideOtpSendResult(
         email: cleanEmail,
         purpose: purpose,
@@ -161,7 +165,7 @@ class CitirideAuthService {
       );
     }
 
-    if (_forceDemoEmailOtp) {
+    if (_useDemoEmailOtp) {
       return false;
     }
 
@@ -185,7 +189,7 @@ class CitirideAuthService {
       );
     }
 
-    if (_forceDemoEmailOtp) {
+    if (_useDemoEmailOtp) {
       if (code != citirideDemoVerificationCode) {
         throw const CitirideAuthException(
           'Incorrect code',

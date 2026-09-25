@@ -14,11 +14,21 @@ export function isPaystackTestMode() {
   return secretKey().startsWith('sk_test');
 }
 
+export function paystackMode() {
+  return isPaystackTestMode() ? 'test' : 'live';
+}
+
 export function preferredDvaBank() {
-  return (
-    process.env.PAYSTACK_DVA_BANK?.trim() ||
-    (isPaystackTestMode() ? 'test-bank' : 'wema-bank')
-  );
+  const configured = process.env.PAYSTACK_DVA_BANK?.trim() || '';
+  if (isPaystackTestMode()) {
+    return configured || 'test-bank';
+  }
+  // Live DVAs cannot use Paystack's test provider, even if the env var was
+  // left as test-bank after rotating to sk_live_...
+  if (!configured || configured === 'test-bank') {
+    return 'wema-bank';
+  }
+  return configured;
 }
 
 async function paystackRequest(path, { method = 'GET', body } = {}) {
@@ -99,10 +109,63 @@ export async function createDedicatedVirtualAccount({
   });
 }
 
-export async function listBanks({ country = 'NG', currency = 'NGN' } = {}) {
-  return paystackRequest(
-    `/bank?country=${encodeURIComponent(country)}&currency=${encodeURIComponent(currency)}`,
-  );
+export async function listDedicatedAccounts({ customerCode } = {}) {
+  const params = new URLSearchParams({ active: 'true' });
+  if (customerCode) {
+    params.set('customer', String(customerCode));
+  }
+  return paystackRequest(`/dedicated_account?${params.toString()}`);
+}
+
+export async function assignDedicatedVirtualAccount(options) {
+  try {
+    return await createDedicatedVirtualAccount(options);
+  } catch (error) {
+    const listed = await listDedicatedAccounts({
+      customerCode: options.customerCode,
+    }).catch(() => ({ data: [] }));
+    const existing = (Array.isArray(listed.data) ? listed.data : []).find(
+      (row) => row && row.active !== false && row.account_number,
+    );
+    if (existing) {
+      return { data: existing };
+    }
+    throw error;
+  }
+}
+
+/**
+ * Paystack requires the full country name (`nigeria`), not the ISO code (`NG`).
+ * `NG` returns an empty list, which made the in-app dropdown fall back to a few hardcoded banks.
+ */
+export async function listBanks({
+  country = 'nigeria',
+  currency = 'NGN',
+} = {}) {
+  const all = [];
+  let page = 1;
+  const perPage = 100;
+
+  for (;;) {
+    const params = new URLSearchParams({
+      country,
+      currency,
+      perPage: String(perPage),
+      page: String(page),
+    });
+    const payload = await paystackRequest(`/bank?${params.toString()}`);
+    const batch = Array.isArray(payload.data) ? payload.data : [];
+    all.push(...batch);
+
+    const meta = payload.meta || {};
+    const pageCount = Number(meta.pageCount || meta.total_pages || 0);
+    if (batch.length !== perPage) break;
+    if (pageCount && page >= pageCount) break;
+    page += 1;
+    if (page > 20) break;
+  }
+
+  return { data: all };
 }
 
 export async function resolveAccountNumber({ accountNumber, bankCode }) {

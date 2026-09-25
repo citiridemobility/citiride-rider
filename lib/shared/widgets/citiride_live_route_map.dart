@@ -100,7 +100,8 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
         widget.vehicleHeading != oldWidget.vehicleHeading ||
         widget.vehicleMarkerAsset != oldWidget.vehicleMarkerAsset ||
         widget.vehicleMarkerWidth != oldWidget.vehicleMarkerWidth ||
-        widget.vehicleMarkerHeight != oldWidget.vehicleMarkerHeight) {
+        widget.vehicleMarkerHeight != oldWidget.vehicleMarkerHeight ||
+        (widget.route != null && oldWidget.route == null)) {
       _loadMarkerIcons();
     }
 
@@ -234,7 +235,7 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
                     icon: icons.vehicle,
                     anchor: const Offset(0.5, 0.5),
                     flat: true,
-                    rotation: (widget.vehicleHeading ?? 0) + 180,
+                    rotation: _vehicleRotation(widget.vehicleHeading ?? 0),
                     zIndexInt: 5,
                   ),
                 if (route != null && icons != null) ...{
@@ -272,6 +273,8 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
                         ? _realNearbyVehicleMarkers(
                             widget.nearbyDrivers, icons.vehicle)
                         : _nearbyVehicleMarkers(route, icons.vehicle)),
+                  if (route != null)
+                    ..._routeDirectionArrowMarkers(route, icons.arrow),
                 },
               },
               onMapTap: widget.onMapTap,
@@ -548,7 +551,7 @@ Marker _routeVehicleMarker(
     icon: icon,
     anchor: const Offset(0.5, 0.5),
     flat: true,
-    rotation: vehicle.heading + 180,
+    rotation: _vehicleRotation(vehicle.heading),
     zIndexInt: 5,
   );
 }
@@ -565,7 +568,7 @@ Set<Marker> _realNearbyVehicleMarkers(
         icon: icon,
         anchor: const Offset(0.5, 0.5),
         flat: true,
-        rotation: drivers[i].heading + 180,
+        rotation: _vehicleRotation(drivers[i].heading),
         zIndexInt: 2,
       ),
   };
@@ -604,10 +607,63 @@ Set<Marker> _nearbyVehicleMarkers(CitirideRoute? route, BitmapDescriptor icon) {
         icon: icon,
         anchor: const Offset(0.5, 0.5),
         flat: true,
-        rotation: offsets[i].heading + 180,
+        rotation: _vehicleRotation(offsets[i].heading),
         zIndexInt: 2,
       ),
   };
+}
+
+Set<Marker> _routeDirectionArrowMarkers(
+  CitirideRoute route,
+  BitmapDescriptor icon,
+) {
+  final arrows = _directionArrowPoints(route.points);
+  return {
+    for (var i = 0; i < arrows.length; i += 1)
+      Marker(
+        markerId: MarkerId('citiride-route-arrow-$i'),
+        position: arrows[i].position,
+        icon: icon,
+        anchor: const Offset(0.5, 0.5),
+        flat: true,
+        rotation: _vehicleRotation(arrows[i].heading),
+        zIndexInt: 1,
+      ),
+  };
+}
+
+/// Google Maps rotation is clockwise from north. Vehicle and arrow bitmaps
+/// are drawn with the nose/tip pointing up, so heading maps 1:1.
+double _vehicleRotation(double heading) {
+  if (heading.isNaN || heading < 0) {
+    return 0;
+  }
+  return heading % 360;
+}
+
+List<_RoutePolylinePoint> _directionArrowPoints(List<LatLng> points) {
+  if (points.length < 2) {
+    return const [];
+  }
+
+  var totalDistance = 0.0;
+  for (var i = 0; i < points.length - 1; i += 1) {
+    totalDistance += _distanceMeters(points[i], points[i + 1]);
+  }
+  if (totalDistance < 45) {
+    return const [];
+  }
+
+  final spacing = math.max(70.0, math.min(140.0, totalDistance / 6));
+  final startAt = math.min(48.0, totalDistance * 0.14);
+  final endAt = math.max(startAt + 24, totalDistance - 32);
+  final arrows = <_RoutePolylinePoint>[];
+  var next = startAt;
+  while (next < endAt && arrows.length < 12) {
+    arrows.add(_pointAlongPolyline(points, (next / totalDistance).clamp(0.0, 1.0)));
+    next += spacing;
+  }
+  return arrows;
 }
 
 _RoutePolylinePoint _pointAlongPolyline(List<LatLng> points, double progress) {
@@ -881,11 +937,13 @@ class _RouteMarkerIcons {
     required this.pickupPin,
     required this.destinationPin,
     required this.vehicle,
+    required this.arrow,
   });
 
   final BitmapDescriptor pickupPin;
   final BitmapDescriptor destinationPin;
   final BitmapDescriptor vehicle;
+  final BitmapDescriptor arrow;
 
   static Future<_RouteMarkerIcons> create({
     required String vehicleAssetName,
@@ -899,10 +957,12 @@ class _RouteMarkerIcons {
       vehicleWidth,
       vehicleHeight,
     );
+    final arrow = await _directionArrowIcon();
     return _RouteMarkerIcons(
       pickupPin: pickupPin,
       destinationPin: destinationPin,
       vehicle: vehicle,
+      arrow: arrow,
     );
   }
 
@@ -943,6 +1003,44 @@ class _RouteMarkerIcons {
     return BitmapDescriptor.bytes(bytes, width: size, height: size);
   }
 
+  static Future<BitmapDescriptor> _directionArrowIcon() async {
+    const logicalSize = 18.0;
+    const dpr = 3.0;
+    final pixelSize = (logicalSize * dpr).round();
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    canvas.scale(dpr);
+
+    final chevron = Path()
+      ..moveTo(logicalSize / 2, 1.5)
+      ..lineTo(logicalSize - 2.5, logicalSize - 3.5)
+      ..lineTo(logicalSize / 2, logicalSize * 0.58)
+      ..lineTo(2.5, logicalSize - 3.5)
+      ..close();
+
+    canvas.drawPath(
+      chevron,
+      Paint()
+        ..color = const Color(0xE6000000)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.4
+        ..strokeJoin = StrokeJoin.round,
+    );
+    canvas.drawPath(chevron, Paint()..color = AppColors.citirideYellow);
+
+    final image = await recorder.endRecording().toImage(pixelSize, pixelSize);
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    final bytes = byteData?.buffer.asUint8List() ?? Uint8List(0);
+    if (bytes.isEmpty) {
+      return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow);
+    }
+    return BitmapDescriptor.bytes(
+      bytes,
+      width: logicalSize,
+      height: logicalSize,
+    );
+  }
+
   static Future<BitmapDescriptor> _vehicleIcon(
     String assetName,
     double width,
@@ -955,11 +1053,37 @@ class _RouteMarkerIcons {
         SvgStringLoader(normalizedSvg),
         null,
       );
-      final image = await pictureInfo.picture.toImage(
+      final landscape = await pictureInfo.picture.toImage(
         (width * 3).round(),
         (height * 3).round(),
       );
       pictureInfo.picture.dispose();
+
+      // The car asset is drawn nose-right. Rotate it nose-up so Maps heading
+      // (0 = north) points the vehicle in the direction of travel.
+      final squareLogical = math.max(width, height);
+      final squarePx = (squareLogical * 3).round();
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      canvas.translate(squarePx / 2, squarePx / 2);
+      canvas.rotate(-math.pi / 2);
+      canvas.drawImageRect(
+        landscape,
+        Rect.fromLTWH(
+          0,
+          0,
+          landscape.width.toDouble(),
+          landscape.height.toDouble(),
+        ),
+        Rect.fromCenter(
+          center: Offset.zero,
+          width: width * 3,
+          height: height * 3,
+        ),
+        Paint()..filterQuality = FilterQuality.high,
+      );
+      final image = await recorder.endRecording().toImage(squarePx, squarePx);
+      landscape.dispose();
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       final bytes = byteData?.buffer.asUint8List() ?? Uint8List(0);
       if (bytes.isEmpty) {
@@ -968,7 +1092,11 @@ class _RouteMarkerIcons {
         );
       }
 
-      return BitmapDescriptor.bytes(bytes, width: width, height: height);
+      return BitmapDescriptor.bytes(
+        bytes,
+        width: squareLogical,
+        height: squareLogical,
+      );
     } on Object {
       return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow);
     }

@@ -23,6 +23,9 @@ export function initFirebaseAdmin() {
       admin.initializeApp({
         credential: admin.credential.cert(parsed),
         projectId: parsed.project_id || process.env.FIREBASE_PROJECT_ID,
+        storageBucket:
+          process.env.FIREBASE_STORAGE_BUCKET?.trim().replace(/^gs:\/\//, '') ||
+          'citiride-d7743-driver-photos',
       });
       initialized = true;
       return true;
@@ -32,6 +35,9 @@ export function initFirebaseAdmin() {
     admin.initializeApp({
       credential: admin.credential.applicationDefault(),
       projectId,
+      storageBucket:
+        process.env.FIREBASE_STORAGE_BUCKET?.trim().replace(/^gs:\/\//, '') ||
+        'citiride-d7743-driver-photos',
     });
     initialized = true;
     return true;

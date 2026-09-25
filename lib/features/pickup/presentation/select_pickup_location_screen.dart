@@ -12,6 +12,7 @@ import '../../../core/location/citiride_place.dart';
 import '../../../core/location/citiride_route.dart';
 import '../../../core/location/citiride_route_service.dart';
 import '../../../core/location/live_location_service.dart';
+import '../../../core/location/location_search_history_store.dart';
 import '../../../core/location/places_service.dart';
 import '../../../core/location/route_query.dart';
 import '../../../shared/widgets/citiride_live_route_map.dart';
@@ -840,9 +841,11 @@ class PickupSearchSheet extends StatefulWidget {
 class _PickupSearchSheetState extends State<PickupSearchSheet> {
   final _placesService = CitiridePlacesService();
   final _locationService = const LiveLocationService();
+  final _historyStore = const LocationSearchHistoryStore();
   late final TextEditingController _controller;
   Timer? _searchDebounce;
   List<CitiridePlace> _suggestions = const [];
+  List<CitiridePlace> _recentPlaces = const [];
   bool _isSearching = false;
   bool _hasSearched = false;
   int _searchGeneration = 0;
@@ -854,8 +857,22 @@ class _PickupSearchSheetState extends State<PickupSearchSheet> {
     _controller.selection = TextSelection.collapsed(
       offset: _controller.text.length,
     );
-    _suggestions = _placesService.defaultPlaces();
+    _suggestions = const [];
     _controller.addListener(_scheduleSearch);
+    unawaited(_loadRecentPlaces());
+  }
+
+  Future<void> _loadRecentPlaces() async {
+    final places = await _historyStore.load();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _recentPlaces = places;
+      if (!_hasSearched) {
+        _suggestions = places;
+      }
+    });
   }
 
   @override
@@ -870,11 +887,15 @@ class _PickupSearchSheetState extends State<PickupSearchSheet> {
     final query = _controller.text.trim();
     _searchDebounce?.cancel();
 
-    if (query.length < 2) {
+    if (query.length < 2 ||
+        query == 'Current Location' ||
+        query == 'My location' ||
+        query == 'Set location' ||
+        query == 'Locating...') {
       setState(() {
         _isSearching = false;
         _hasSearched = false;
-        _suggestions = _placesService.defaultPlaces();
+        _suggestions = _recentPlaces;
       });
       return;
     }
@@ -907,7 +928,9 @@ class _PickupSearchSheetState extends State<PickupSearchSheet> {
       return;
     }
 
-    Navigator.of(context).pop(CitiridePlace(title: location));
+    final place = CitiridePlace(title: location);
+    unawaited(_historyStore.record(place));
+    Navigator.of(context).pop(place);
   }
 
   Future<void> _submitMyLocation() async {
@@ -934,6 +957,7 @@ class _PickupSearchSheetState extends State<PickupSearchSheet> {
       return;
     }
 
+    unawaited(_historyStore.record(resolvedSuggestion));
     Navigator.of(context).pop(resolvedSuggestion);
   }
 

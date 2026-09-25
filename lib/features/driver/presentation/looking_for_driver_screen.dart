@@ -31,6 +31,10 @@ const _arrivingToRideArrivalDelay = Duration(seconds: 15);
 const _rideArrivalToDrivingDelay = Duration(seconds: 15);
 const _drivingToRideSuccessDelay = Duration(seconds: 10);
 
+const _previewDriverName = 'Andrew Johnson';
+const _previewDriverVehicle = 'Green Toyota Corolla Sedan';
+const _previewDriverPlate = 'BEN931AP';
+
 typedef ShareRideLauncher = Future<void> Function(ShareParams params);
 
 @visibleForTesting
@@ -648,6 +652,9 @@ class _DriverFoundScreenState extends State<DriverFoundScreen> {
   void _bindTripOrDemoTimer() {
     final rideId = widget.rideId?.trim();
     if (rideId == null || rideId.isEmpty || _isRunningWidgetTest) {
+      _driverName = _previewDriverName;
+      _driverVehicle = _previewDriverVehicle;
+      _driverPlate = _previewDriverPlate;
       _startArrivingTimer();
       return;
     }
@@ -933,7 +940,14 @@ class _DriverFoundScreenState extends State<DriverFoundScreen> {
                     onCollapse: _collapseCard,
                     onEditPickup: () => _editPickup(context),
                     onEditRoute: () => _editRoute(context),
-                    onNotesTap: () => _showPickupNotesChat(context),
+                    onNotesTap: () =>
+                      _showPickupNotesChat(
+                        context,
+                        driverName: _driverName,
+                        driverImage: _driverImage,
+                        driverVehicle: _driverVehicle,
+                        driverPlate: _driverPlate,
+                      ),
                     onCancelRide: () => _cancelRide(context),
                     driverName: _driverName,
                     driverImage: _driverImage,
@@ -1034,6 +1048,9 @@ class _ArrivingScreenState extends State<ArrivingScreen> {
   void _bindTripOrDemoTimer() {
     final rideId = widget.rideId?.trim();
     if (rideId == null || rideId.isEmpty || _isRunningWidgetTest) {
+      _driverName = _previewDriverName;
+      _driverVehicle = _previewDriverVehicle;
+      _driverPlate = _previewDriverPlate;
       _startRideArrivalTimer();
       return;
     }
@@ -1248,6 +1265,9 @@ class _ArrivingScreenState extends State<ArrivingScreen> {
       context,
       pickupLocation: _pickupLocation,
       destination: _destination,
+      driverName: _driverName,
+      driverVehicle: _driverVehicle,
+      driverPlate: _driverPlate,
     );
     if (!mounted) {
       return;
@@ -1352,7 +1372,14 @@ class _ArrivingScreenState extends State<ArrivingScreen> {
                     onRetreat: _retreatSheet,
                     onEditPickup: () => _editPickup(context),
                     onEditRoute: () => _editRoute(context),
-                    onNotesTap: () => _showPickupNotesChat(context),
+                    onNotesTap: () =>
+                      _showPickupNotesChat(
+                        context,
+                        driverName: _driverName,
+                        driverImage: _driverImage,
+                        driverVehicle: _driverVehicle,
+                        driverPlate: _driverPlate,
+                      ),
                     onShareRide: () => _shareRide(context),
                     onCancelRide: () => _cancelRide(context),
                     driverName: _driverName,
@@ -1451,6 +1478,9 @@ class _RideArrivalScreenState extends State<RideArrivalScreen> {
   void _bindTripOrDemoTimer() {
     final rideId = widget.rideId?.trim();
     if (rideId == null || rideId.isEmpty || _isRunningWidgetTest) {
+      _driverName = _previewDriverName;
+      _driverVehicle = _previewDriverVehicle;
+      _driverPlate = _previewDriverPlate;
       if (widget.autoStartTrip) {
         _startDrivingTimer();
       }
@@ -1615,6 +1645,9 @@ class _RideArrivalScreenState extends State<RideArrivalScreen> {
       context,
       pickupLocation: _pickupLocation,
       destination: _destination,
+      driverName: _driverName,
+      driverVehicle: _driverVehicle,
+      driverPlate: _driverPlate,
     );
     if (!mounted || !widget.autoStartTrip) {
       return;
@@ -1681,7 +1714,14 @@ class _RideArrivalScreenState extends State<RideArrivalScreen> {
                     remainingWaitSeconds: _remainingWaitSeconds,
                     overtimeWaitSeconds: _overtimeWaitSeconds,
                     waitTimeLabel: _waitTimeLabel,
-                    onNotesTap: () => _showPickupNotesChat(context),
+                    onNotesTap: () =>
+                      _showPickupNotesChat(
+                        context,
+                        driverName: _driverName,
+                        driverImage: _driverImage,
+                        driverVehicle: _driverVehicle,
+                        driverPlate: _driverPlate,
+                      ),
                     onCallTap: () {},
                     onShareTap: () => _shareRide(context),
                     driverName: _driverName,
@@ -1777,6 +1817,9 @@ class _DrivingToDestinationScreenState
   void _bindTripOrDemoTimer() {
     final rideId = widget.rideId?.trim();
     if (rideId == null || rideId.isEmpty || _isRunningWidgetTest) {
+      _driverName = _previewDriverName;
+      _driverVehicle = _previewDriverVehicle;
+      _driverPlate = _previewDriverPlate;
       if (widget.autoCompleteTrip) {
         _startRideSuccessTimer();
       }
@@ -2251,8 +2294,8 @@ class _DrivingToDestinationPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 20),
-          const Text(
-            'Your driver is Andrew',
+          Text(
+            'Your driver is $driverName',
             style: TextStyle(
               color: AppColors.white,
               fontSize: 13,
@@ -3884,10 +3927,16 @@ Future<void> _showShareRideDetails(
   BuildContext context, {
   required String pickupLocation,
   required String destination,
+  String driverName = _previewDriverName,
+  String? driverVehicle,
+  String? driverPlate,
 }) async {
   final message = _shareRideMessage(
     pickupLocation: pickupLocation,
     destination: destination,
+    driverName: driverName,
+    driverVehicle: driverVehicle ?? _previewDriverVehicle,
+    driverPlate: driverPlate ?? _previewDriverPlate,
   );
 
   final shouldShare = await showModalBottomSheet<bool>(
@@ -4101,7 +4150,13 @@ class _ShareRideScreenshotPreview extends StatelessWidget {
   }
 }
 
-Future<void> _showPickupNotesChat(BuildContext context) {
+Future<void> _showPickupNotesChat(
+  BuildContext context, {
+  required String driverName,
+  String? driverImage,
+  String? driverVehicle,
+  String? driverPlate,
+}) {
   return showGeneralDialog<void>(
     context: context,
     barrierDismissible: true,
@@ -4109,7 +4164,12 @@ Future<void> _showPickupNotesChat(BuildContext context) {
     barrierColor: Colors.black.withValues(alpha: 0.18),
     transitionDuration: const Duration(milliseconds: 180),
     pageBuilder: (context, animation, secondaryAnimation) {
-      return const _PickupNotesChatOverlay();
+      return _PickupNotesChatOverlay(
+        driverName: driverName,
+        driverImage: driverImage,
+        driverVehicle: driverVehicle,
+        driverPlate: driverPlate,
+      );
     },
     transitionBuilder: (context, animation, secondaryAnimation, child) {
       return FadeTransition(
@@ -4128,7 +4188,17 @@ class _ChatMessage {
 }
 
 class _PickupNotesChatOverlay extends StatefulWidget {
-  const _PickupNotesChatOverlay();
+  const _PickupNotesChatOverlay({
+    required this.driverName,
+    this.driverImage,
+    this.driverVehicle,
+    this.driverPlate,
+  });
+
+  final String driverName;
+  final String? driverImage;
+  final String? driverVehicle;
+  final String? driverPlate;
 
   @override
   State<_PickupNotesChatOverlay> createState() =>
@@ -4333,24 +4403,42 @@ class _PickupNotesChatOverlayState extends State<_PickupNotesChatOverlay> {
             ),
           ),
           const SizedBox(width: 4),
-          const CompatibleSvgPicture.asset(
-            'assets/images/driver_img.svg',
-            width: 38,
-            height: 42,
-            fit: BoxFit.contain,
-            semanticsLabel: 'Driver profile',
-          ),
+          if (widget.driverImage != null && widget.driverImage!.isNotEmpty)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(21),
+              child: Image.network(
+                widget.driverImage!,
+                width: 38,
+                height: 42,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const CompatibleSvgPicture.asset(
+                  'assets/images/driver_img.svg',
+                  width: 38,
+                  height: 42,
+                ),
+              ),
+            )
+          else
+            const CompatibleSvgPicture.asset(
+              'assets/images/driver_img.svg',
+              width: 38,
+              height: 42,
+              fit: BoxFit.contain,
+              semanticsLabel: 'Driver profile',
+            ),
           const SizedBox(width: 10),
-          const Expanded(
+          Expanded(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Andrew Johnson',
+                  widget.driverName.trim().isEmpty
+                      ? 'Driver'
+                      : widget.driverName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: AppColors.white,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -4358,12 +4446,18 @@ class _PickupNotesChatOverlayState extends State<_PickupNotesChatOverlay> {
                     letterSpacing: 0,
                   ),
                 ),
-                SizedBox(height: 5),
+                const SizedBox(height: 5),
                 Text(
-                  'Toyota Corolla Sedan - BEN931AP',
+                  [
+                    widget.driverVehicle?.trim(),
+                    widget.driverPlate?.trim(),
+                  ]
+                      .whereType<String>()
+                      .where((value) => value.isNotEmpty)
+                      .join(' - '),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: Color(0xFF9A9A9A),
                     fontSize: 10,
                     fontWeight: FontWeight.w400,

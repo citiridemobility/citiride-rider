@@ -10,6 +10,7 @@ import '../../../app/theme/app_colors.dart';
 import '../../../core/maps/google_maps_config.dart';
 import '../../../core/location/citiride_place.dart';
 import '../../../core/location/live_location_service.dart';
+import '../../../core/location/location_search_history_store.dart';
 import '../../../core/location/places_service.dart';
 import '../../../core/location/route_query.dart';
 import '../../../shared/widgets/citiride_google_map.dart';
@@ -50,6 +51,7 @@ class RouteSelectionScreen extends StatefulWidget {
 class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
   final _placesService = CitiridePlacesService();
   final _locationService = const LiveLocationService();
+  final _historyStore = const LocationSearchHistoryStore();
   Timer? _searchDebounce;
   LatLng? _locationBias;
   LatLng? _pickupLatLng;
@@ -60,6 +62,7 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
   String? _destinationLatLngText;
   _RouteSearchTarget? _activeSearchTarget;
   List<CitiridePlace> _placeSuggestions = const [];
+  List<CitiridePlace> _recentPlaces = const [];
   bool _isSearchingPlaces = false;
   bool _hasPlaceSearch = false;
   bool _isResolvingRoute = false;
@@ -125,6 +128,17 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
     if (!_isRunningWidgetTest) {
       _loadLocationBias();
     }
+    unawaited(_loadRecentPlaces());
+  }
+
+  Future<void> _loadRecentPlaces() async {
+    final places = await _historyStore.load();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _recentPlaces = places;
+    });
   }
 
   @override
@@ -307,6 +321,8 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
       resolvedSuggestion.location,
       controller.text.trim(),
     );
+    unawaited(_historyStore.record(resolvedSuggestion));
+    unawaited(_loadRecentPlaces());
     _placesService.resetSession();
     _searchDebounce?.cancel();
 
@@ -427,6 +443,15 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
       );
       return;
     }
+
+    unawaited(
+      _historyStore.record(
+        CitiridePlace(
+          title: _destinationController.text.trim(),
+          location: destinationLatLng,
+        ),
+      ),
+    );
 
     if (widget.isEditingDestinations) {
       final returnPath = switch (widget.returnTo) {
@@ -649,9 +674,9 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
                             hasSearch: _hasPlaceSearch,
                             query: _activeSearchQuery,
                             suggestions: _placeSuggestions,
-                            defaultSuggestions: _placesService.defaultPlaces(),
+                            recentPlaces: _recentPlaces,
                             onSuggestionSelected: _selectPlaceSuggestion,
-                            onDefaultSelected: _selectDefaultPlaceSuggestion,
+                            onRecentSelected: _selectDefaultPlaceSuggestion,
                           ),
                         ],
                       ),
@@ -1119,18 +1144,18 @@ class _RouteLocationContent extends StatelessWidget {
     required this.hasSearch,
     required this.query,
     required this.suggestions,
-    required this.defaultSuggestions,
+    required this.recentPlaces,
     required this.onSuggestionSelected,
-    required this.onDefaultSelected,
+    required this.onRecentSelected,
   });
 
   final bool isSearching;
   final bool hasSearch;
   final String query;
   final List<CitiridePlace> suggestions;
-  final List<CitiridePlace> defaultSuggestions;
+  final List<CitiridePlace> recentPlaces;
   final ValueChanged<CitiridePlace> onSuggestionSelected;
-  final ValueChanged<CitiridePlace> onDefaultSelected;
+  final ValueChanged<CitiridePlace> onRecentSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -1172,42 +1197,25 @@ class _RouteLocationContent extends StatelessWidget {
       );
     }
 
-    final saved = defaultSuggestions.skip(1).take(3).toList(growable: false);
-    final recent = defaultSuggestions.length > 2
-        ? defaultSuggestions[2]
-        : defaultSuggestions.first;
+    if (recentPlaces.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.only(top: 12),
+        child: Text(
+          'Places you search will appear here.',
+          style: TextStyle(
+            color: Color(0xFF8F8F8F),
+            fontSize: 13,
+            fontWeight: FontWeight.w400,
+            height: 1.3,
+            letterSpacing: 0,
+          ),
+        ),
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Saved Locations',
-          style: TextStyle(
-            color: Color(0xFF2C2D36),
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            height: 1.2,
-            letterSpacing: 0,
-          ),
-        ),
-        const SizedBox(height: 18),
-        for (var index = 0; index < saved.length; index++) ...[
-          _LocationListItem(
-            iconAsset: index == 0
-                ? 'assets/images/Time_Icon.svg'
-                : 'assets/images/Location_Icon.svg',
-            title: saved[index].title,
-            subtitle: saved[index].subtitle ?? 'Nigeria',
-            distance: switch (index) {
-              0 => '12.6km',
-              1 => '<1km',
-              _ => '7.2km',
-            },
-            onTap: () => onDefaultSelected(saved[index]),
-          ),
-          if (index != saved.length - 1) const SizedBox(height: 16),
-        ],
-        const SizedBox(height: 34),
         const Text(
           'Recent locations',
           style: TextStyle(
@@ -1219,13 +1227,18 @@ class _RouteLocationContent extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 20),
-        _LocationListItem(
-          iconAsset: 'assets/images/Location_Icon.svg',
-          title: recent.title,
-          subtitle: recent.subtitle ?? 'Nigeria',
-          distance: '<1km',
-          onTap: () => onDefaultSelected(recent),
-        ),
+        for (var index = 0; index < recentPlaces.length; index++) ...[
+          _LocationListItem(
+            iconAsset: index == 0
+                ? 'assets/images/Time_Icon.svg'
+                : 'assets/images/Location_Icon.svg',
+            title: recentPlaces[index].title,
+            subtitle: recentPlaces[index].subtitle ?? 'Nigeria',
+            distance: '',
+            onTap: () => onRecentSelected(recentPlaces[index]),
+          ),
+          if (index != recentPlaces.length - 1) const SizedBox(height: 16),
+        ],
       ],
     );
   }

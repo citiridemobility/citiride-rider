@@ -1,6 +1,10 @@
 import express from 'express';
 
 import {
+  isTransferBank,
+  mapPaystackBank,
+} from '../paystack/bank-logos.js';
+import {
   hasPaystack,
   isPaystackTestMode,
   listBanks,
@@ -118,17 +122,28 @@ walletRouter.get('/me/transactions', async (req, res) => {
   }
 });
 
+const BANKS_CACHE_MS = 12 * 60 * 60 * 1000;
+let banksCache = { at: 0, banks: null };
+
 walletRouter.get('/banks', async (_req, res) => {
   try {
+    if (banksCache.banks && Date.now() - banksCache.at < BANKS_CACHE_MS) {
+      return res.json({ ok: true, banks: banksCache.banks });
+    }
+
     const result = await listBanks();
+    const seen = new Set();
     const banks = (result.data || [])
-      .filter((bank) => bank && bank.active !== false && bank.code)
-      .map((bank) => ({
-        name: bank.name,
-        code: bank.code,
-        slug: bank.slug,
-        active: bank.active !== false,
-      }));
+      .filter(isTransferBank)
+      .map(mapPaystackBank)
+      .filter((bank) => {
+        if (seen.has(bank.code)) return false;
+        seen.add(bank.code);
+        return true;
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    banksCache = { at: Date.now(), banks };
     return res.json({ ok: true, banks });
   } catch (error) {
     console.error('wallet banks failed', error);

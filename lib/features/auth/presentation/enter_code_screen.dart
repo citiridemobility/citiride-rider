@@ -15,24 +15,12 @@ import 'widgets/auth_number_pad.dart';
 class EnterCodeScreen extends StatefulWidget {
   const EnterCodeScreen({
     super.key,
-    this.phoneDigits = '',
-    this.phoneNumber,
     this.email,
     this.intent = 'signup',
-    this.authMethod = CitirideAuthMethod.phone,
-    this.verificationId,
-    this.resendToken,
-    this.verificationMode = CitiridePhoneVerificationMode.demo,
   });
 
-  final String phoneDigits;
-  final String? phoneNumber;
   final String? email;
   final String intent;
-  final CitirideAuthMethod authMethod;
-  final String? verificationId;
-  final int? resendToken;
-  final CitiridePhoneVerificationMode verificationMode;
 
   @override
   State<EnterCodeScreen> createState() => _EnterCodeScreenState();
@@ -61,8 +49,6 @@ class _EnterCodeScreenState extends State<EnterCodeScreen> {
 
   bool get _canContinue =>
       _isComplete && _result != _CodeResult.incorrect && !_isSubmitting;
-
-  bool get _isEmailAuth => widget.authMethod == CitirideAuthMethod.email;
 
   @override
   void initState() {
@@ -167,20 +153,16 @@ class _EnterCodeScreenState extends State<EnterCodeScreen> {
     }
 
     await _sessionStore
-        .markAuthenticated(
-          email: _isEmailAuth ? _emailAddress : null,
-        )
+        .markAuthenticated(email: _emailAddress)
         .timeout(
           const Duration(seconds: 2),
           onTimeout: () {},
         );
 
-    if (_isEmailAuth) {
-      final profile = RiderProfileStore.instance.profile.value;
-      await RiderProfileStore.instance
-          .update(profile.copyWith(email: _emailAddress))
-          .timeout(const Duration(seconds: 2), onTimeout: () {});
-    }
+    final profile = RiderProfileStore.instance.profile.value;
+    await RiderProfileStore.instance
+        .update(profile.copyWith(email: _emailAddress))
+        .timeout(const Duration(seconds: 2), onTimeout: () {});
 
     setState(() {
       _result = _CodeResult.correct;
@@ -206,17 +188,10 @@ class _EnterCodeScreenState extends State<EnterCodeScreen> {
   }
 
   Future<void> _confirmEnteredCode() {
-    if (_isEmailAuth) {
-      return _authService.confirmEmailCode(
-        code: _code,
-        email: _emailAddress,
-        purpose: CitirideOtpPurpose.login,
-      );
-    }
-
-    throw const CitirideAuthException(
-      'Phone SMS verification is disabled. Use email OTP instead.',
-      code: 'phone-auth-disabled',
+    return _authService.confirmEmailCode(
+      code: _code,
+      email: _emailAddress,
+      purpose: CitirideOtpPurpose.login,
     );
   }
 
@@ -297,17 +272,10 @@ class _EnterCodeScreenState extends State<EnterCodeScreen> {
     });
 
     try {
-      if (_isEmailAuth) {
-        await _authService.startEmailVerification(
-          email: _emailAddress,
-          purpose: CitirideOtpPurpose.login,
-        );
-      } else {
-        throw const CitirideAuthException(
-          'Phone SMS verification is disabled. Use email OTP instead.',
-          code: 'phone-auth-disabled',
-        );
-      }
+      await _authService.startEmailVerification(
+        email: _emailAddress,
+        purpose: CitirideOtpPurpose.login,
+      );
     } on CitirideAuthException catch (error) {
       if (!mounted) {
         return;
@@ -362,21 +330,6 @@ class _EnterCodeScreenState extends State<EnterCodeScreen> {
     return provided.toLowerCase();
   }
 
-  String get _formattedPhoneNumber => _formatNigerianPhone(widget.phoneDigits);
-
-  static String _formatNigerianPhone(String digits) {
-    final cleaned = digits.replaceAll(RegExp(r'\D'), '');
-    final normalized = cleaned.length == 11 && cleaned.startsWith('0')
-        ? cleaned.substring(1)
-        : cleaned;
-
-    if (normalized.length >= 10) {
-      return '+234 ${normalized.substring(0, 3)} '
-          '${normalized.substring(3, 7)} ${normalized.substring(7, 10)}';
-    }
-
-    return '+234 903 4627 499';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -413,10 +366,7 @@ class _EnterCodeScreenState extends State<EnterCodeScreen> {
                         children: [
                           SizedBox(height: compact ? 15 : 24),
                           _EnterCodeHeader(
-                            authMethod: widget.authMethod,
-                            target: _isEmailAuth
-                                ? _emailAddress
-                                : _formattedPhoneNumber,
+                            target: _emailAddress,
                             onBack: _goBack,
                           ),
                           SizedBox(height: compact ? 16 : 24),
@@ -447,7 +397,6 @@ class _EnterCodeScreenState extends State<EnterCodeScreen> {
                             ),
                           ),
                           _CodeDeliveryActions(
-                            authMethod: widget.authMethod,
                             resendSeconds: _resendSeconds,
                             isVerified: _result == _CodeResult.correct,
                             onResend: () => unawaited(_resendCode()),
@@ -505,12 +454,10 @@ class _EnterCodeScreenState extends State<EnterCodeScreen> {
 
 class _EnterCodeHeader extends StatelessWidget {
   const _EnterCodeHeader({
-    required this.authMethod,
     required this.target,
     required this.onBack,
   });
 
-  final CitirideAuthMethod authMethod;
   final String target;
   final VoidCallback onBack;
 
@@ -547,12 +494,10 @@ class _EnterCodeHeader extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 10),
-              Text(
-                authMethod == CitirideAuthMethod.email
-                    ? 'A one-time password was sent to your email'
-                    : 'A verification code was sent to your Whatsapp',
+              const Text(
+                'A one-time password was sent to your email',
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   color: Color(0xFF8F8F8F),
                   fontSize: 13,
                   fontWeight: FontWeight.w400,
@@ -661,13 +606,11 @@ class _CodeBoxes extends StatelessWidget {
 
 class _CodeDeliveryActions extends StatelessWidget {
   const _CodeDeliveryActions({
-    required this.authMethod,
     required this.resendSeconds,
     required this.isVerified,
     required this.onResend,
   });
 
-  final CitirideAuthMethod authMethod;
   final int resendSeconds;
   final bool isVerified;
   final VoidCallback onResend;
@@ -703,26 +646,6 @@ class _CodeDeliveryActions extends StatelessWidget {
               ),
             ),
           ),
-          const Spacer(),
-          if (authMethod == CitirideAuthMethod.phone)
-            TextButton(
-              onPressed: () {},
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.citirideYellow,
-                padding: EdgeInsets.zero,
-                minimumSize: const Size(0, 30),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: const Text(
-                'Send via text message',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  height: 1,
-                  letterSpacing: 0,
-                ),
-              ),
-            ),
         ],
       ),
     );

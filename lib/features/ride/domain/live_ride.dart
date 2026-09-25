@@ -323,6 +323,17 @@ class DriverProfileSummary {
       return null;
     }
 
+    String? firstHttpUrl(List<String?> values) {
+      for (final value in values) {
+        final clean = value?.trim();
+        if (clean != null &&
+            (clean.startsWith('http://') || clean.startsWith('https://'))) {
+          return clean;
+        }
+      }
+      return null;
+    }
+
     return DriverProfileSummary(
       driverId: id,
       displayName: firstNonEmpty([
@@ -331,7 +342,7 @@ class DriverProfileSummary {
         personalInfo?['fullName'] as String?,
         personalInfo?['name'] as String?,
       ]),
-      photoUri: firstNonEmpty([
+      photoUri: firstHttpUrl([
         data['photoUri'] as String?,
         data['photoURL'] as String?,
         data['profilePhoto'] as String?,

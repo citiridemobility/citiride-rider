@@ -8,8 +8,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  const recentHistoryJson =
+      '[{"title":"Benin City","subtitle":"Nigeria","lat":6.335,"lng":5.6037},{"title":"Afemai Transport Company","subtitle":"Dawson Road, Benin City","lat":6.3339,"lng":5.6252},{"title":"Ring Road Bus Terminal","subtitle":"Oba Market Road, Benin City 300102","lat":6.3374,"lng":5.6149}]';
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues({
+      'citiride.location_search_history': recentHistoryJson,
+    });
+  });
   Future<void> pumpToOnboarding(WidgetTester tester) async {
     await tester.pumpWidget(
       CitirideApp(
@@ -18,7 +27,7 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.bySemanticsLabel('CitiRide logo'), findsOneWidget);
+    expect(find.bySemanticsLabel('CitiRide'), findsOneWidget);
 
     await tester.pump(const Duration(seconds: 4));
     await tester.pumpAndSettle();
@@ -51,10 +60,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text('Enter your number'), findsOneWidget);
-    expect(find.text('Send via text message instead'), findsOneWidget);
-    expect(find.bySemanticsLabel('Nigeria country code'), findsOneWidget);
-    expect(find.byKey(const ValueKey('keypad-cancel-icon')), findsOneWidget);
+    expect(find.text('Enter your email'), findsOneWidget);
+    expect(find.byKey(const ValueKey('auth-email-field')), findsOneWidget);
+    expect(find.bySemanticsLabel('Nigeria country code'), findsNothing);
+    expect(find.text('Use phone number instead'), findsNothing);
   }
 
   Future<void> tapDialDigits(WidgetTester tester, String digits) async {
@@ -66,13 +75,17 @@ void main() {
 
   Future<void> pumpToEnterCode(WidgetTester tester) async {
     await pumpToEnterNumber(tester);
-    await tapDialDigits(tester, '8031234567');
+    await tester.enterText(
+      find.byKey(const ValueKey('auth-email-field')),
+      'rider@example.com',
+    );
+    await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
-    await tester.pumpAndSettle();
-    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text('Enter the code'), findsOneWidget);
-    expect(find.text('+234 803 1234 567'), findsOneWidget);
+    expect(find.text('rider@example.com'), findsAtLeastNWidgets(1));
     expect(
       find.byKey(const ValueKey('verification-code-box-5')),
       findsOneWidget,
@@ -98,7 +111,7 @@ void main() {
 
   FilledButton continueButton(WidgetTester tester) {
     return tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Continue'),
+      find.widgetWithText(FilledButton, 'Continue').last,
     );
   }
 
@@ -150,7 +163,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('sign up routes from welcome to enter number', (
+  testWidgets('sign up routes from welcome to enter email', (
     WidgetTester tester,
   ) async {
     await pumpToEnterNumber(tester);
@@ -160,50 +173,10 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets(
-    'invalid Nigerian phone format shows error and disables continue',
-    (WidgetTester tester) async {
-      await pumpToEnterNumber(tester);
-
-      await tapDialDigits(tester, '1234567890');
-
-      expect(find.text('Invalid number format'), findsOneWidget);
-      expect(continueButton(tester).onPressed, isNull);
-
-      await tester.pumpWidget(const SizedBox.shrink());
-    },
-  );
-
-  testWidgets('valid Nigerian phone format enables continue', (
+  testWidgets('invalid email address shows error and disables continue', (
     WidgetTester tester,
   ) async {
     await pumpToEnterNumber(tester);
-
-    await tapDialDigits(tester, '8031234567');
-
-    expect(find.text('803 1234 567'), findsOneWidget);
-    expect(find.text('Invalid number format'), findsNothing);
-    expect(continueButton(tester).onPressed, isNotNull);
-
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
-
-  testWidgets('use email instead switches to email authentication UI', (
-    WidgetTester tester,
-  ) async {
-    await pumpToEnterNumber(tester);
-
-    expect(find.byKey(const ValueKey('dial-key-1')), findsOneWidget);
-    expect(find.byKey(const ValueKey('use-email-instead')), findsOneWidget);
-
-    await tester.tap(find.byKey(const ValueKey('use-email-instead')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Enter your email'), findsOneWidget);
-    expect(find.byKey(const ValueKey('auth-email-field')), findsOneWidget);
-    expect(find.byKey(const ValueKey('dial-key-1')), findsNothing);
-    expect(find.bySemanticsLabel('Nigeria country code'), findsNothing);
-    expect(continueButton(tester).onPressed, isNull);
 
     await tester.enterText(
       find.byKey(const ValueKey('auth-email-field')),
@@ -214,6 +187,14 @@ void main() {
     expect(find.text('Invalid email address'), findsOneWidget);
     expect(continueButton(tester).onPressed, isNull);
 
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('valid email address enables continue', (
+    WidgetTester tester,
+  ) async {
+    await pumpToEnterNumber(tester);
+
     await tester.enterText(
       find.byKey(const ValueKey('auth-email-field')),
       'rider@example.com',
@@ -223,12 +204,6 @@ void main() {
     expect(find.text('Invalid email address'), findsNothing);
     expect(continueButton(tester).onPressed, isNotNull);
 
-    await tester.tap(find.byKey(const ValueKey('use-phone-instead')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Enter your number'), findsOneWidget);
-    expect(find.byKey(const ValueKey('dial-key-1')), findsOneWidget);
-
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -237,8 +212,6 @@ void main() {
   ) async {
     await pumpToEnterNumber(tester);
 
-    await tester.tap(find.byKey(const ValueKey('use-email-instead')));
-    await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const ValueKey('auth-email-field')),
       'rider@example.com',
@@ -246,25 +219,25 @@ void main() {
     await tester.pump();
 
     await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
-    await tester.pumpAndSettle();
-    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text('Enter the code'), findsOneWidget);
     expect(
-      find.text('A verification code was sent to your email'),
+      find.text('A one-time password was sent to your email'),
       findsOneWidget,
     );
-    expect(find.text('rider@example.com'), findsOneWidget);
+    expect(find.text('rider@example.com'), findsAtLeastNWidgets(1));
 
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('valid phone continue routes to enter code screen', (
+  testWidgets('valid email continue routes to enter code screen', (
     WidgetTester tester,
   ) async {
     await pumpToEnterCode(tester);
 
-    expect(find.text('Resend code in 11'), findsOneWidget);
+    expect(find.text('Resend code in 30'), findsOneWidget);
     expect(continueButton(tester).onPressed, isNull);
 
     await tester.pumpWidget(const SizedBox.shrink());
@@ -276,9 +249,9 @@ void main() {
     await pumpToEnterCode(tester);
 
     await tester.pump(const Duration(seconds: 1));
-    expect(find.text('Resend code in 10'), findsOneWidget);
+    expect(find.text('Resend code in 29'), findsOneWidget);
 
-    await tester.pump(const Duration(seconds: 10));
+    await tester.pump(const Duration(seconds: 29));
     expect(find.text('Resend code'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());

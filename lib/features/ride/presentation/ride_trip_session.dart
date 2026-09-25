@@ -51,11 +51,15 @@ class RideTripSnapshot {
   }
 
   String? get driverImage {
-    final fromProfile = driverProfile?.photoUri?.trim();
-    if (fromProfile != null && fromProfile.isNotEmpty) {
-      return fromProfile;
+    final candidates = [driverProfile?.photoUri, ride.driverImage];
+    for (final value in candidates) {
+      final clean = value?.trim();
+      if (clean != null &&
+          (clean.startsWith('http://') || clean.startsWith('https://'))) {
+        return clean;
+      }
     }
-    return ride.driverImage;
+    return null;
   }
 
   String? get driverVehicle {

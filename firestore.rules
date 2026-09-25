@@ -73,13 +73,11 @@ service cloud.firestore {
           (isRideOwner()
             && request.resource.data.status == 'cancelled'
             && resource.data.status in ['requested', 'accepted', 'arriving', 'waiting'])
-          // Driver accepts an open or offered request
+          // Driver accepts any still-open request (offers are not a lock)
           || (isSignedIn()
             && resource.data.status == 'requested'
             && request.resource.data.status in ['accepted', 'arriving']
-            && request.resource.data.driverId == authUid()
-            && (isUnassigned(resource.data)
-                || resource.data.driverId == authUid()))
+            && request.resource.data.driverId == authUid())
           // Driver declines an open or offered request
           || (isSignedIn()
             && resource.data.status == 'requested'

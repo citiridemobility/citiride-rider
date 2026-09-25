@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/auth/citiride_auth_service.dart';
 import '../../core/location/citiride_fare.dart';
 import '../../core/location/route_query.dart';
 import '../../features/auth/presentation/enter_code_screen.dart';
@@ -93,25 +92,10 @@ abstract final class AppRouter {
           name: 'enter-code',
           builder: (context, state) {
             final query = state.uri.queryParameters;
-            final resendTokenValue = query['resendToken'];
 
             return EnterCodeScreen(
-              phoneDigits: query['phone'] ?? '',
-              phoneNumber: query['phoneE164'],
               email: query['email'],
               intent: query['intent'] == 'login' ? 'login' : 'signup',
-              authMethod: CitirideAuthMethod.values.firstWhere(
-                (method) => method.name == query['authMethod'],
-                orElse: () => CitirideAuthMethod.phone,
-              ),
-              verificationId: query['verificationId'],
-              resendToken: resendTokenValue == null
-                  ? null
-                  : int.tryParse(resendTokenValue),
-              verificationMode: CitiridePhoneVerificationMode.values.firstWhere(
-                (mode) => mode.name == query['mode'],
-                orElse: () => CitiridePhoneVerificationMode.demo,
-              ),
             );
           },
         ),

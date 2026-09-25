@@ -1,9 +1,10 @@
 import {
-  createDedicatedVirtualAccount,
+  assignDedicatedVirtualAccount,
   createTransferRecipient,
   ensureCustomer,
   initiateTransfer,
   isPaystackTestMode,
+  paystackMode,
   requeryDedicatedAccount,
   resolveAccountNumber,
   verifyTransaction,
@@ -82,6 +83,28 @@ function preferredProviderSlug(bankName) {
   return isPaystackTestMode() ? 'test-bank' : '';
 }
 
+function storedFundingMode(funding) {
+  const explicit = String(funding?.paystackMode || '').toLowerCase();
+  if (explicit === 'live' || explicit === 'test') {
+    return explicit;
+  }
+  const slug = String(funding?.bankSlug || '').toLowerCase();
+  const name = String(funding?.bankName || '').toLowerCase();
+  if (slug === 'test-bank' || name.includes('test')) {
+    return 'test';
+  }
+  return null;
+}
+
+function fundingAccountNeedsAssignment(wallet) {
+  const funding = wallet.fundingAccount;
+  if (!funding?.accountNumber) {
+    return true;
+  }
+  const stored = storedFundingMode(funding);
+  return Boolean(stored && stored !== paystackMode());
+}
+
 /**
  * Test-key only: credit the ledger without a real bank transfer.
  * Use this when Paystack demo-bank funding is inconvenient.
@@ -147,7 +170,7 @@ export async function ensureFundingAccount(userId, profile = {}) {
   const db = getFirestore();
   const ref = db.collection(WALLETS).doc(userId);
   let wallet = await getOrCreateWallet(userId, profile);
-  if (wallet.fundingAccount?.accountNumber) {
+  if (!fundingAccountNeedsAssignment(wallet)) {
     return wallet;
   }
 
@@ -168,7 +191,7 @@ export async function ensureFundingAccount(userId, profile = {}) {
     phone,
   });
   const customerCode = customer.customer_code || customer.id;
-  const dva = await createDedicatedVirtualAccount({
+  const dva = await assignDedicatedVirtualAccount({
     customerCode,
     firstName,
     lastName,
@@ -183,6 +206,7 @@ export async function ensureFundingAccount(userId, profile = {}) {
     bankSlug: account.bank?.slug || null,
     currency: account.currency || 'NGN',
     provider: 'paystack',
+    paystackMode: paystackMode(),
     dedicatedAccountId: account.id || null,
     assignedAt: new Date().toISOString(),
   };
