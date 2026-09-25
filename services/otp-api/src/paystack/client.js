@@ -71,13 +71,31 @@ export async function createCustomer({ email, firstName, lastName, phone }) {
   });
 }
 
-export async function fetchCustomerByEmail(email) {
-  return paystackRequest(`/customer/${encodeURIComponent(email)}`);
+export async function fetchCustomer(idOrCodeOrEmail) {
+  return paystackRequest(`/customer/${encodeURIComponent(idOrCodeOrEmail)}`);
+}
+
+export async function fetchDedicatedAccountById(id) {
+  return paystackRequest(`/dedicated_account/${encodeURIComponent(id)}`);
+}
+
+export async function fetchDedicatedAccounts({
+  accountNumber,
+  customer,
+} = {}) {
+  const params = new URLSearchParams({ active: 'true' });
+  if (accountNumber) {
+    params.set('account_number', String(accountNumber));
+  }
+  if (customer) {
+    params.set('customer', String(customer));
+  }
+  return paystackRequest(`/dedicated_account?${params.toString()}`);
 }
 
 export async function ensureCustomer({ email, firstName, lastName, phone }) {
   try {
-    const existing = await fetchCustomerByEmail(email);
+    const existing = await fetchCustomer(email);
     return existing.data;
   } catch {
     const created = await createCustomer({
@@ -215,14 +233,22 @@ export async function listPaystackTransactions({
   status = 'success',
   perPage = 50,
   page = 1,
+  from,
+  amount,
 } = {}) {
   const params = new URLSearchParams({
     status,
     perPage: String(perPage),
     page: String(page),
   });
-  if (customer) {
-    params.set('customer', String(customer));
+  if (customer != null && String(customer).trim()) {
+    params.set('customer', String(customer).trim());
+  }
+  if (from) {
+    params.set('from', String(from));
+  }
+  if (amount != null && Number.isFinite(Number(amount))) {
+    params.set('amount', String(amount));
   }
   return paystackRequest(`/transaction?${params.toString()}`);
 }

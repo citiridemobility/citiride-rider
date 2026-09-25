@@ -2,6 +2,9 @@ import {
   assignDedicatedVirtualAccount,
   createTransferRecipient,
   ensureCustomer,
+  fetchCustomer,
+  fetchDedicatedAccountById,
+  fetchDedicatedAccounts,
   initiateTransfer,
   isPaystackTestMode,
   listPaystackTransactions,
@@ -45,9 +48,41 @@ function serializeWallet(doc) {
     status: data.status || 'active',
     fundingAccount: data.fundingAccount || null,
     paystackCustomerCode: data.paystackCustomerCode || null,
+    paystackCustomerId: data.paystackCustomerId || null,
     testMode: isPaystackTestMode(),
     updatedAt: data.updatedAt?.toDate?.()?.toISOString?.() || null,
   };
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isSuccessStatus(status) {
+  const value = String(status || '').toLowerCase();
+  return !value || value === 'success' || value === 'successful' || value === 'paid';
+}
+
+function chargeFromUnknown(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+  if (payload.reference && Number(payload.amount || 0) > 0) {
+    return payload;
+  }
+  if (payload.transaction) {
+    return chargeFromUnknown(payload.transaction);
+  }
+  if (Array.isArray(payload.data)) {
+    return payload.data.map(chargeFromUnknown).find(Boolean) || null;
+  }
+  if (payload.data && typeof payload.data === 'object') {
+    return chargeFromUnknown(payload.data);
+  }
+  if (Array.isArray(payload.transactions)) {
+    return payload.transactions.map(chargeFromUnknown).find(Boolean) || null;
+  }
+  return null;
 }
 
 /**
@@ -66,20 +101,35 @@ export async function requeryWalletFunding(userId) {
     throw new Error('Funding account is not ready yet. Open Add Money again.');
   }
 
+  const before = Number(wallet.availableBalance || 0);
   await syncPaystackTopUps(userId, wallet);
 
-  const today = new Date().toISOString().slice(0, 10);
   try {
-    await requeryDedicatedAccount({
+    const recovered = await requeryDedicatedAccount({
       accountNumber,
       providerSlug,
-      date: today,
+      date: new Date().toISOString().slice(0, 10),
     });
+    const charge = chargeFromUnknown(recovered);
+    if (charge) {
+      await handleChargeSuccess({ data: charge }, { userId });
+    }
   } catch (error) {
     console.warn('Paystack DVA requery failed', error.message || error);
   }
 
-  await syncPaystackTopUps(userId, await getOrCreateWallet(userId));
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const current = await getOrCreateWallet(userId);
+    await syncPaystackTopUps(userId, current);
+    const updated = await getOrCreateWallet(userId);
+    if (Number(updated.availableBalance || 0) > before) {
+      return updated;
+    }
+    if (attempt < 3) {
+      await sleep(1200);
+    }
+  }
+
   return getOrCreateWallet(userId);
 }
 
@@ -115,32 +165,27 @@ function looksLikeWalletFunding(txn, accountNumber) {
  * Credit successful Paystack charges that never arrived via webhook.
  */
 async function syncPaystackTopUps(userId, wallet) {
-  const customerCode = String(wallet.paystackCustomerCode || '').trim();
-  const accountNumber = String(wallet.fundingAccount?.accountNumber || '').trim();
-  if (!customerCode && !accountNumber) {
-    return { credited: 0 };
+  const { rows, customerId, customerCode } = await collectPaystackCharges(wallet);
+  if (
+    (customerId && customerId !== wallet.paystackCustomerId) ||
+    (customerCode && customerCode !== wallet.paystackCustomerCode)
+  ) {
+    const db = getFirestore();
+    await db.collection(WALLETS).doc(userId).set(
+      {
+        ...(customerId ? { paystackCustomerId: customerId } : {}),
+        ...(customerCode ? { paystackCustomerCode: customerCode } : {}),
+        updatedAt: new Date(),
+      },
+      { merge: true },
+    );
   }
 
-  const listed = await listPaystackTransactions({
-    customer: customerCode || undefined,
-    status: 'success',
-    perPage: 50,
-  });
-  const rows = Array.isArray(listed.data) ? listed.data : [];
   let credited = 0;
 
   for (const row of rows) {
-    if (String(row?.status || '').toLowerCase() !== 'success') {
-      continue;
-    }
-    if (Number(row?.amount || 0) <= 0) {
-      continue;
-    }
-    if (!looksLikeWalletFunding(row, accountNumber) && !customerCode) {
-      continue;
-    }
     try {
-      const result = await handleChargeSuccess({ data: row });
+      const result = await handleChargeSuccess({ data: row }, { userId });
       if (result?.ok) {
         credited += 1;
       }
@@ -154,6 +199,124 @@ async function syncPaystackTopUps(userId, wallet) {
   }
 
   return { credited };
+}
+
+async function collectPaystackCharges(wallet) {
+  const accountNumber = String(wallet.fundingAccount?.accountNumber || '').trim();
+  const dedicatedAccountId = wallet.fundingAccount?.dedicatedAccountId || null;
+  let customerId = wallet.paystackCustomerId || null;
+  let customerCode = String(wallet.paystackCustomerCode || '').trim() || null;
+  const seen = new Set();
+  const rows = [];
+
+  const addRows = (list) => {
+    for (const row of Array.isArray(list) ? list : []) {
+      const reference = String(row?.reference || '').trim();
+      if (!reference || seen.has(reference)) {
+        continue;
+      }
+      if (row?.status && !isSuccessStatus(row.status)) {
+        continue;
+      }
+      if (Number(row?.amount || 0) <= 0) {
+        continue;
+      }
+      if (
+        accountNumber &&
+        receiverAccountNumber(row) &&
+        receiverAccountNumber(row) !== accountNumber
+      ) {
+        continue;
+      }
+      seen.add(reference);
+      rows.push(row);
+    }
+  };
+
+  const applyDva = (dva) => {
+    if (!dva) return;
+    if (dva.customer?.id) {
+      customerId = dva.customer.id;
+    }
+    if (dva.customer?.customer_code) {
+      customerCode = dva.customer.customer_code;
+    }
+    addRows(dva.transactions);
+    addRows(dva.assignment?.transactions);
+  };
+
+  if (dedicatedAccountId) {
+    try {
+      const dedicated = await fetchDedicatedAccountById(dedicatedAccountId);
+      applyDva(dedicated.data);
+    } catch (error) {
+      console.warn('fetch dedicated account failed', error.message || error);
+    }
+  }
+
+  try {
+    const dvas = await fetchDedicatedAccounts({
+      accountNumber: accountNumber || undefined,
+    });
+    const dvaRows = Array.isArray(dvas.data)
+      ? dvas.data
+      : dvas.data
+        ? [dvas.data]
+        : [];
+    const dva =
+      dvaRows.find((row) => String(row?.account_number || '') === accountNumber) ||
+      dvaRows[0];
+    applyDva(dva);
+  } catch (error) {
+    console.warn('fetch dedicated accounts failed', error.message || error);
+  }
+
+  if (!customerId && customerCode) {
+    try {
+      const customer = await fetchCustomer(customerCode);
+      customerId = customer.data?.id || customerId;
+      customerCode = customer.data?.customer_code || customerCode;
+    } catch (error) {
+      console.warn('fetch Paystack customer failed', error.message || error);
+    }
+  }
+
+  const from = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
+  const queries = [];
+  if (customerId) {
+    queries.push(
+      listPaystackTransactions({
+        customer: customerId,
+        status: 'success',
+        perPage: 50,
+        from,
+      }),
+    );
+  }
+  if (customerCode) {
+    queries.push(
+      listPaystackTransactions({
+        customer: customerCode,
+        status: 'success',
+        perPage: 50,
+        from,
+      }),
+    );
+  }
+
+  const results = await Promise.all(
+    queries.map((request) => request.catch((error) => {
+      console.warn('list Paystack transactions failed', error.message || error);
+      return { data: [] };
+    })),
+  );
+  for (const result of results) {
+    addRows(result.data);
+  }
+
+  return { rows, customerId, customerCode };
 }
 
 function preferredProviderSlug(bankName) {
@@ -507,21 +670,28 @@ async function creditWalletTx({
   });
 }
 
-export async function handleChargeSuccess(eventData) {
+export async function handleChargeSuccess(eventData, { userId: knownUserId } = {}) {
   const data = eventData?.data || eventData || {};
   const reference = String(data.reference || '').trim();
   const amountKobo = Number(data.amount || 0);
-  const status = String(data.status || '').toLowerCase();
+  const status = String(data.status || 'success').toLowerCase();
 
-  if (!reference || amountKobo <= 0 || status !== 'success') {
+  if (!reference || amountKobo <= 0 || !isSuccessStatus(status)) {
     return { ok: false, reason: 'ignored' };
   }
 
-  // Verify with Paystack before crediting.
-  const verified = await verifyTransaction(reference);
-  const verifiedData = verified.data || {};
-  if (String(verifiedData.status || '').toLowerCase() !== 'success') {
-    return { ok: false, reason: 'unverified' };
+  let verifiedData = data;
+  try {
+    const verified = await verifyTransaction(reference);
+    verifiedData = verified.data || data;
+    if (!isSuccessStatus(verifiedData.status)) {
+      return { ok: false, reason: 'unverified' };
+    }
+  } catch (error) {
+    if (!knownUserId) {
+      return { ok: false, reason: 'unverified' };
+    }
+    console.warn('Paystack verify skipped for known wallet top-up', reference, error.message || error);
   }
 
   const channel = String(
@@ -545,9 +715,9 @@ export async function handleChargeSuccess(eventData) {
     .toLowerCase();
 
   const db = getFirestore();
-  let userId = null;
+  let userId = knownUserId || null;
 
-  if (customerCode) {
+  if (!userId && customerCode) {
     const match = await db
       .collection(WALLETS)
       .where('paystackCustomerCode', '==', customerCode)
