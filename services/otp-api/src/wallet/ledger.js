@@ -105,6 +105,86 @@ function fundingAccountNeedsAssignment(wallet) {
   return Boolean(stored && stored !== paystackMode());
 }
 
+function isTestLedgerTxn(data) {
+  return (
+    data?.testEra === true ||
+    data?.metadata?.simulated === true ||
+    data?.metadata?.channel === 'test_credit' ||
+    String(data?.providerReference || '').startsWith('test_') ||
+    String(data?.title || '').toLowerCase().includes('test wallet')
+  );
+}
+
+function txnCreatedMs(data) {
+  return data?.createdAt?.toMillis?.() || 0;
+}
+
+/**
+ * Test Paystack credits live on the same Firestore ledger as live money.
+ * After rotating to sk_live, drop leftover test balance (and hide test-era
+ * history) so the wallet only shows real Naira.
+ */
+async function alignWalletLedgerMode(ref, snap) {
+  const current = paystackMode();
+  const data = snap.data() || {};
+  if (data.paystackLedgerMode === current) {
+    return snap;
+  }
+
+  const db = getFirestore();
+  const userId = snap.id;
+  const now = new Date();
+  const assignedMs = Date.parse(data.fundingAccount?.assignedAt || '') || 0;
+  const liveFunding = storedFundingMode(data.fundingAccount) === 'live';
+
+  const txnSnap = await db
+    .collection(TXNS)
+    .where('userId', '==', userId)
+    .get();
+
+  let liveNetKobo = 0;
+  const staleRefs = [];
+  for (const doc of txnSnap.docs) {
+    const row = doc.data() || {};
+    const created = txnCreatedMs(row);
+    const liveEra =
+      liveFunding &&
+      assignedMs > 0 &&
+      created >= assignedMs &&
+      !isTestLedgerTxn(row);
+    if (liveEra) {
+      liveNetKobo += Number(row.amountKobo || 0);
+      continue;
+    }
+    if (!row.testEra) {
+      staleRefs.push(doc.ref);
+    }
+  }
+
+  const nextBalanceKobo =
+    current === 'live' ? Math.max(0, liveNetKobo) : Number(data.availableBalanceKobo || 0);
+
+  await ref.set(
+    {
+      availableBalanceKobo: current === 'live' ? nextBalanceKobo : data.availableBalanceKobo || 0,
+      pendingBalanceKobo: current === 'live' ? 0 : data.pendingBalanceKobo || 0,
+      paystackLedgerMode: current,
+      updatedAt: now,
+    },
+    { merge: true },
+  );
+
+  for (let i = 0; i < staleRefs.length; i += 400) {
+    const batch = db.batch();
+    for (const txnRef of staleRefs.slice(i, i + 400)) {
+      batch.set(txnRef, { testEra: true, updatedAt: now }, { merge: true });
+    }
+    await batch.commit();
+  }
+
+  return ref.get();
+}
+
 /**
  * Test-key only: credit the ledger without a real bank transfer.
  * Use this when Paystack demo-bank funding is inconvenient.
@@ -141,7 +221,8 @@ export async function getOrCreateWallet(
   const ref = db.collection(WALLETS).doc(userId);
   const snap = await ref.get();
   if (snap.exists) {
-    return serializeWallet(snap);
+    const aligned = await alignWalletLedgerMode(ref, snap);
+    return serializeWallet(aligned);
   }
 
   const now = new Date();
@@ -159,6 +240,7 @@ export async function getOrCreateWallet(
     phone: phone || null,
     fundingAccount: null,
     paystackCustomerCode: null,
+    paystackLedgerMode: paystackMode(),
     createdAt: now,
     updatedAt: now,
   };
@@ -211,6 +293,9 @@ export async function ensureFundingAccount(userId, profile = {}) {
     assignedAt: new Date().toISOString(),
   };
 
+  const switchingToLive =
+    paystackMode() === 'live' && storedFundingMode(wallet.fundingAccount) !== 'live';
+
   await ref.set(
     {
       email,
@@ -219,13 +304,21 @@ export async function ensureFundingAccount(userId, profile = {}) {
       paystackCustomerCode: customerCode,
       paystackCustomerId: customer.id || null,
       fundingAccount,
+      ...(switchingToLive
+        ? {
+            availableBalanceKobo: 0,
+            pendingBalanceKobo: 0,
+            paystackLedgerMode: 'live',
+          }
+        : { paystackLedgerMode: paystackMode() }),
       updatedAt: new Date(),
     },
     { merge: true },
   );
 
   const refreshed = await ref.get();
-  return serializeWallet(refreshed);
+  const aligned = await alignWalletLedgerMode(ref, refreshed);
+  return serializeWallet(aligned);
 }
 
 export async function listTransactions(userId, { limit = 30 } = {}) {
@@ -235,6 +328,8 @@ export async function listTransactions(userId, { limit = 30 } = {}) {
     .where('userId', '==', userId)
     .limit(Math.min(Math.max(limit, 1) * 3, 150))
     .get();
+
+  const hideTestEra = paystackMode() === 'live';
 
   return snap.docs
     .map((doc) => {
@@ -252,11 +347,13 @@ export async function listTransactions(userId, { limit = 30 } = {}) {
         metadata: data.metadata || {},
         createdAt: data.createdAt?.toDate?.()?.toISOString?.() || null,
         _sort: data.createdAt?.toMillis?.() || 0,
+        _hide: hideTestEra && isTestLedgerTxn(data),
       };
     })
+    .filter((row) => !row._hide)
     .sort((a, b) => b._sort - a._sort)
     .slice(0, Math.min(limit, 100))
-    .map(({ _sort, ...rest }) => rest);
+    .map(({ _sort, _hide, ...rest }) => rest);
 }
 
 async function creditWalletTx({
