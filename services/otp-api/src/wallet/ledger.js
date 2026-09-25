@@ -4,6 +4,7 @@ import {
   ensureCustomer,
   initiateTransfer,
   isPaystackTestMode,
+  listPaystackTransactions,
   paystackMode,
   requeryDedicatedAccount,
   resolveAccountNumber,
@@ -50,8 +51,8 @@ function serializeWallet(doc) {
 }
 
 /**
- * Ask Paystack to look for missed DVA deposits, then return the current wallet.
- * Balance only changes after Paystack posts charge.success to the webhook.
+ * Ask Paystack to look for missed DVA deposits, credit any that already exist,
+ * then return the current wallet.
  */
 export async function requeryWalletFunding(userId) {
   const wallet = await getOrCreateWallet(userId);
@@ -65,14 +66,94 @@ export async function requeryWalletFunding(userId) {
     throw new Error('Funding account is not ready yet. Open Add Money again.');
   }
 
-  const today = new Date().toISOString().slice(0, 10);
-  await requeryDedicatedAccount({
-    accountNumber,
-    providerSlug,
-    date: today,
-  });
+  await syncPaystackTopUps(userId, wallet);
 
+  const today = new Date().toISOString().slice(0, 10);
+  try {
+    await requeryDedicatedAccount({
+      accountNumber,
+      providerSlug,
+      date: today,
+    });
+  } catch (error) {
+    console.warn('Paystack DVA requery failed', error.message || error);
+  }
+
+  await syncPaystackTopUps(userId, await getOrCreateWallet(userId));
   return getOrCreateWallet(userId);
+}
+
+function receiverAccountNumber(txn) {
+  const auth = txn?.authorization || {};
+  const metadata = txn?.metadata || {};
+  return String(
+    auth.receiver_bank_account_number ||
+      auth.receiver_account_number ||
+      auth.account_number ||
+      metadata.receiver_account_number ||
+      metadata.account_number ||
+      '',
+  ).trim();
+}
+
+function looksLikeWalletFunding(txn, accountNumber) {
+  const channel = String(
+    txn?.channel || txn?.authorization?.channel || '',
+  ).toLowerCase();
+  const receiver = receiverAccountNumber(txn);
+  if (accountNumber && receiver && receiver === accountNumber) {
+    return true;
+  }
+  return (
+    channel.includes('dedicated') ||
+    channel === 'bank_transfer' ||
+    channel === 'dedicated_nuban'
+  );
+}
+
+/**
+ * Credit successful Paystack charges that never arrived via webhook.
+ */
+async function syncPaystackTopUps(userId, wallet) {
+  const customerCode = String(wallet.paystackCustomerCode || '').trim();
+  const accountNumber = String(wallet.fundingAccount?.accountNumber || '').trim();
+  if (!customerCode && !accountNumber) {
+    return { credited: 0 };
+  }
+
+  const listed = await listPaystackTransactions({
+    customer: customerCode || undefined,
+    status: 'success',
+    perPage: 50,
+  });
+  const rows = Array.isArray(listed.data) ? listed.data : [];
+  let credited = 0;
+
+  for (const row of rows) {
+    if (String(row?.status || '').toLowerCase() !== 'success') {
+      continue;
+    }
+    if (Number(row?.amount || 0) <= 0) {
+      continue;
+    }
+    if (!looksLikeWalletFunding(row, accountNumber) && !customerCode) {
+      continue;
+    }
+    try {
+      const result = await handleChargeSuccess({ data: row });
+      if (result?.ok) {
+        credited += 1;
+      }
+    } catch (error) {
+      console.warn(
+        'sync Paystack top-up failed',
+        row?.reference,
+        error.message || error,
+      );
+    }
+  }
+
+  return { credited };
 }
 
 function preferredProviderSlug(bankName) {
@@ -161,12 +242,19 @@ async function alignWalletLedgerMode(ref, snap) {
     }
   }
 
-  const nextBalanceKobo =
-    current === 'live' ? Math.max(0, liveNetKobo) : Number(data.availableBalanceKobo || 0);
+  const currentAvailable = Number(data.availableBalanceKobo || 0);
+  let nextBalanceKobo = currentAvailable;
+  if (current === 'live') {
+    if (liveNetKobo > 0) {
+      nextBalanceKobo = liveNetKobo;
+    } else if (staleRefs.length > 0) {
+      nextBalanceKobo = 0;
+    }
+  }
 
   await ref.set(
     {
-      availableBalanceKobo: current === 'live' ? nextBalanceKobo : data.availableBalanceKobo || 0,
+      availableBalanceKobo: current === 'live' ? nextBalanceKobo : currentAvailable,
       pendingBalanceKobo: current === 'live' ? 0 : data.pendingBalanceKobo || 0,
       paystackLedgerMode: current,
       updatedAt: now,
@@ -424,9 +512,6 @@ export async function handleChargeSuccess(eventData) {
   const reference = String(data.reference || '').trim();
   const amountKobo = Number(data.amount || 0);
   const status = String(data.status || '').toLowerCase();
-  const channel = String(data.authorization?.channel || data.channel || '');
-  const customerCode = data.customer?.customer_code || null;
-  const email = (data.customer?.email || '').trim().toLowerCase();
 
   if (!reference || amountKobo <= 0 || status !== 'success') {
     return { ok: false, reason: 'ignored' };
@@ -439,6 +524,26 @@ export async function handleChargeSuccess(eventData) {
     return { ok: false, reason: 'unverified' };
   }
 
+  const channel = String(
+    verifiedData.authorization?.channel ||
+      verifiedData.channel ||
+      data.authorization?.channel ||
+      data.channel ||
+      '',
+  );
+  const customerCode =
+    verifiedData.customer?.customer_code ||
+    data.customer?.customer_code ||
+    null;
+  const customerId = verifiedData.customer?.id || data.customer?.id || null;
+  const email = (
+    verifiedData.customer?.email ||
+    data.customer?.email ||
+    ''
+  )
+    .trim()
+    .toLowerCase();
+
   const db = getFirestore();
   let userId = null;
 
@@ -446,6 +551,17 @@ export async function handleChargeSuccess(eventData) {
     const match = await db
       .collection(WALLETS)
       .where('paystackCustomerCode', '==', customerCode)
+      .limit(1)
+      .get();
+    if (!match.empty) {
+      userId = match.docs[0].id;
+    }
+  }
+
+  if (!userId && customerId) {
+    const match = await db
+      .collection(WALLETS)
+      .where('paystackCustomerId', '==', customerId)
       .limit(1)
       .get();
     if (!match.empty) {
@@ -466,9 +582,7 @@ export async function handleChargeSuccess(eventData) {
 
   // Dedicated account number fallback.
   const accountNumber =
-    data.authorization?.receiver_bank_account_number ||
-    data.authorization?.receiver_account_number ||
-    null;
+    receiverAccountNumber(verifiedData) || receiverAccountNumber(data) || null;
   if (!userId && accountNumber) {
     const match = await db
       .collection(WALLETS)

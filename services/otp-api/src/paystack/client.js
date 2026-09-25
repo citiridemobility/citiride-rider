@@ -210,6 +210,23 @@ export async function initiateTransfer({
   });
 }
 
+export async function listPaystackTransactions({
+  customer,
+  status = 'success',
+  perPage = 50,
+  page = 1,
+} = {}) {
+  const params = new URLSearchParams({
+    status,
+    perPage: String(perPage),
+    page: String(page),
+  });
+  if (customer) {
+    params.set('customer', String(customer));
+  }
+  return paystackRequest(`/transaction?${params.toString()}`);
+}
+
 export async function verifyTransaction(reference) {
   return paystackRequest(`/transaction/verify/${encodeURIComponent(reference)}`);
 }

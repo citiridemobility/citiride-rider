@@ -204,8 +204,7 @@ walletRouter.post('/funding/requery', async (req, res) => {
     return res.json({
       ok: true,
       wallet,
-      message:
-        'Paystack is rechecking this account. If a transfer exists, balance updates shortly via webhook.',
+      message: 'Wallet updated from Paystack.',
     });
   } catch (error) {
     console.error('wallet funding requery failed', error);

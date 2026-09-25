@@ -103,7 +103,7 @@ class _WalletHomeScreenState extends State<WalletHomeScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_loadWallet());
+      unawaited(_loadWallet(syncFromPaystack: true));
     });
   }
 
@@ -196,11 +196,16 @@ class _WalletHomeScreenState extends State<WalletHomeScreen> {
     }
   }
 
-  Future<void> _loadWallet() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> _loadWallet({
+    bool showSpinner = true,
+    bool syncFromPaystack = false,
+  }) async {
+    if (showSpinner && mounted) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
 
     try {
       final profile = RiderProfileStore.instance.profile.value;
@@ -211,6 +216,12 @@ class _WalletHomeScreenState extends State<WalletHomeScreen> {
           fullName: profile.fullName,
           phone: profile.phoneNumber,
         );
+      }
+
+      if (syncFromPaystack) {
+        try {
+          await _walletClient.requeryFunding();
+        } catch (_) {}
       }
 
       final wallet = await _walletClient.fetchWallet();
@@ -244,6 +255,7 @@ class _WalletHomeScreenState extends State<WalletHomeScreen> {
             )
             .toList();
         _loading = false;
+        _error = null;
       });
     } catch (error) {
       if (!mounted) return;
@@ -254,6 +266,10 @@ class _WalletHomeScreenState extends State<WalletHomeScreen> {
             : 'Unable to load wallet.';
       });
     }
+  }
+
+  Future<void> _refreshWallet() {
+    return _loadWallet(showSpinner: false, syncFromPaystack: true);
   }
 
   void _goBack() {
@@ -317,107 +333,122 @@ class _WalletHomeScreenState extends State<WalletHomeScreen> {
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                     child: _WalletHomeHeader(onBack: _goBack),
                   ),
-                  const SizedBox(height: 18),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: ValueListenableBuilder<RiderProfile>(
-                      valueListenable: RiderProfileStore.instance.profile,
-                      builder: (context, profile, _) {
-                        return _WalletBalanceCard(
-                          name: profile.displayName,
-                          balanceText: _formatMoney(_availableBalance),
-                          balanceVisible: _balanceVisible,
-                          onToggleVisibility: () {
-                            setState(() => _balanceVisible = !_balanceVisible);
-                          },
-                        );
-                      },
-                    ),
-                  ),
-                  if (_error != null) ...[
-                    const SizedBox(height: 12),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: Text(
-                        _error!,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Color(0xFFFF8A8A),
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ],
-                  if (_loading) ...[
-                    const SizedBox(height: 16),
-                    const CircularProgressIndicator(
-                      color: AppColors.citirideYellow,
-                    ),
-                  ],
-                  const SizedBox(height: 22),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: _WalletQuickActions(
-                      onAddMoney: () => context.push('/wallet-add-money'),
-                      onWithdraw: _onWithdraw,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
                   Expanded(
-                    child: Container(
-                      width: double.infinity,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF1C1C1C),
-                        borderRadius: BorderRadius.vertical(
-                          top: Radius.circular(28),
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const SizedBox(height: 22),
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 20),
-                            child: Text(
-                              'Transaction History',
-                              style: TextStyle(
-                                color: AppColors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0,
+                    child: RefreshIndicator(
+                      color: AppColors.citirideYellow,
+                      backgroundColor: const Color(0xFF2A2A2A),
+                      onRefresh: _refreshWallet,
+                      child: CustomScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        slivers: [
+                          const SliverToBoxAdapter(child: SizedBox(height: 18)),
+                          SliverPadding(
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            sliver: SliverToBoxAdapter(
+                              child: ValueListenableBuilder<RiderProfile>(
+                                valueListenable:
+                                    RiderProfileStore.instance.profile,
+                                builder: (context, profile, _) {
+                                  return _WalletBalanceCard(
+                                    name: profile.displayName,
+                                    balanceText: _formatMoney(
+                                      _availableBalance,
+                                    ),
+                                    balanceVisible: _balanceVisible,
+                                    onToggleVisibility: () {
+                                      setState(
+                                        () =>
+                                            _balanceVisible = !_balanceVisible,
+                                      );
+                                    },
+                                  );
+                                },
                               ),
                             ),
                           ),
-                          const SizedBox(height: 14),
-                          Padding(
+                          if (_error != null)
+                            SliverPadding(
+                              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                              sliver: SliverToBoxAdapter(
+                                child: Text(
+                                  _error!,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Color(0xFFFF8A8A),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          if (_loading)
+                            const SliverToBoxAdapter(
+                              child: Padding(
+                                padding: EdgeInsets.only(top: 16),
+                                child: Center(
+                                  child: CircularProgressIndicator(
+                                    color: AppColors.citirideYellow,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          const SliverToBoxAdapter(child: SizedBox(height: 22)),
+                          SliverPadding(
                             padding: const EdgeInsets.symmetric(horizontal: 20),
-                            child: _WalletFilterChips(
+                            sliver: SliverToBoxAdapter(
+                              child: _WalletQuickActions(
+                                onAddMoney: () =>
+                                    context.push('/wallet-add-money'),
+                                onWithdraw: _onWithdraw,
+                              ),
+                            ),
+                          ),
+                          const SliverToBoxAdapter(child: SizedBox(height: 24)),
+                          SliverToBoxAdapter(
+                            child: _WalletHistoryHeader(
                               active: _filter,
                               onChanged: (filter) {
                                 setState(() => _filter = filter);
                               },
                             ),
                           ),
-                          const SizedBox(height: 8),
-                          Expanded(
-                            child: ListView.separated(
-                              padding: const EdgeInsets.fromLTRB(
-                                20,
-                                12,
-                                20,
-                                120,
+                          SliverPadding(
+                            padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
+                            sliver: DecoratedSliver(
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF1C1C1C),
                               ),
-                              itemCount: _filteredTransactions.length,
-                              separatorBuilder: (_, _) =>
-                                  const SizedBox(height: 16),
-                              itemBuilder: (context, index) {
-                                return _WalletTransactionTile(
-                                  transaction: _filteredTransactions[index],
-                                  onTap: () => _openTransactionDetails(
-                                    _filteredTransactions[index],
-                                  ),
-                                );
-                              },
+                              sliver: _filteredTransactions.isEmpty
+                                  ? SliverToBoxAdapter(
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 36,
+                                        ),
+                                        child: Text(
+                                          _loading
+                                              ? ''
+                                              : 'No transactions yet',
+                                          textAlign: TextAlign.center,
+                                          style: const TextStyle(
+                                            color: Color(0xFF8F8F8F),
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ),
+                                    )
+                                  : SliverList.separated(
+                                      itemCount: _filteredTransactions.length,
+                                      separatorBuilder: (_, _) =>
+                                          const SizedBox(height: 16),
+                                      itemBuilder: (context, index) {
+                                        return _WalletTransactionTile(
+                                          transaction:
+                                              _filteredTransactions[index],
+                                          onTap: () => _openTransactionDetails(
+                                            _filteredTransactions[index],
+                                          ),
+                                        );
+                                      },
+                                    ),
                             ),
                           ),
                         ],
@@ -700,6 +731,51 @@ class _WalletActionButton extends StatelessWidget {
               letterSpacing: 0,
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WalletHistoryHeader extends StatelessWidget {
+  const _WalletHistoryHeader({
+    required this.active,
+    required this.onChanged,
+  });
+
+  final _WalletTxnFilter active;
+  final ValueChanged<_WalletTxnFilter> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      decoration: const BoxDecoration(
+        color: Color(0xFF1C1C1C),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 22),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20),
+            child: Text(
+              'Transaction History',
+              style: TextStyle(
+                color: AppColors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0,
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: _WalletFilterChips(active: active, onChanged: onChanged),
+          ),
+          const SizedBox(height: 8),
         ],
       ),
     );
