@@ -41,7 +41,7 @@ const fromEmail =
   process.env.OTP_FROM_EMAIL?.trim() || 'CitiRide <onboarding@resend.dev>';
 const otpTtlMs = Number(process.env.OTP_TTL_MS || 10 * 60 * 1000);
 const maxAttempts = Number(process.env.OTP_MAX_ATTEMPTS || 5);
-const resendCooldownMs = Number(process.env.OTP_RESEND_COOLDOWN_MS || 30 * 1000);
+const resendCooldownMs = Number(process.env.OTP_RESEND_COOLDOWN_MS || 40 * 1000);
 const demoMode =
   process.env.OTP_DEMO_MODE === 'true' ||
   (!resendApiKey && process.env.NODE_ENV !== 'production');

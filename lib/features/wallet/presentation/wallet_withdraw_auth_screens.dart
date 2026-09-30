@@ -30,7 +30,7 @@ class WalletWithdrawOtpScreen extends StatefulWidget {
 
 class _WalletWithdrawOtpScreenState extends State<WalletWithdrawOtpScreen> {
   static const _codeLength = 6;
-  static const _resendStartSeconds = 30;
+  static const _resendStartSeconds = 40;
 
   String _code = '';
   int _resendSeconds = _resendStartSeconds;

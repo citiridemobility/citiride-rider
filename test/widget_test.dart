@@ -237,7 +237,7 @@ void main() {
   ) async {
     await pumpToEnterCode(tester);
 
-    expect(find.text('Resend code in 30'), findsOneWidget);
+    expect(find.text('Resend code in 40'), findsOneWidget);
     expect(continueButton(tester).onPressed, isNull);
 
     await tester.pumpWidget(const SizedBox.shrink());
@@ -249,9 +249,9 @@ void main() {
     await pumpToEnterCode(tester);
 
     await tester.pump(const Duration(seconds: 1));
-    expect(find.text('Resend code in 29'), findsOneWidget);
+    expect(find.text('Resend code in 39'), findsOneWidget);
 
-    await tester.pump(const Duration(seconds: 29));
+    await tester.pump(const Duration(seconds: 39));
     expect(find.text('Resend code'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());

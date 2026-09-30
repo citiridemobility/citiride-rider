@@ -276,7 +276,7 @@ enum _ResetOtpResult { idle, correct, incorrect }
 
 class _ResetPinOtpScreenState extends State<ResetPinOtpScreen> {
   static const _codeLength = 6;
-  static const _resendStartSeconds = 30;
+  static const _resendStartSeconds = 40;
 
   String _code = '';
   int _resendSeconds = _resendStartSeconds;

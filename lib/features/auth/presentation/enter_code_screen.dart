@@ -30,7 +30,7 @@ enum _CodeResult { idle, correct, incorrect }
 
 class _EnterCodeScreenState extends State<EnterCodeScreen> {
   static const _codeLength = 6;
-  static const _resendStartSeconds = 30;
+  static const _resendStartSeconds = 40;
   static const _successDelay = Duration(seconds: 2);
   static const _verificationTimeout = Duration(seconds: 45);
 
