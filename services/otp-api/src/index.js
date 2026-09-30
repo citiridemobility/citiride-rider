@@ -7,6 +7,7 @@ import express from 'express';
 import { Resend } from 'resend';
 
 import {
+  otpEmailCopy,
   otpEmailHtml,
   otpEmailText,
   driverWelcomeEmailHtml,
@@ -206,7 +207,7 @@ app.post('/v1/otp/send', async (req, res) => {
       const { error } = await resend.emails.send({
         from: fromEmail,
         to: [email],
-        subject: 'Your CitiRide one-time password',
+        subject: otpEmailCopy(purpose).subject,
         html: otpEmailHtml({ code, purpose, ttlMinutes }),
         text: otpEmailText({ code, purpose, ttlMinutes }),
       });
@@ -296,7 +297,7 @@ app.post('/v1/otp/verify', async (req, res) => {
     otpStore.delete(key);
 
     let welcomeEmail = 'skipped';
-    if (purpose === 'login') {
+    if (purpose === 'signup' || purpose === 'login') {
       welcomeEmail = await sendRiderWelcomeEmail(email);
     }
 
@@ -326,10 +327,15 @@ app.post('/v1/otp/verify', async (req, res) => {
   }
 });
 
-/** Driver app (React Native): send OTP scoped to driver login. */
+/** Driver app (React Native): send OTP scoped to driver login or signup. */
 app.post('/v1/driver/otp/send', async (req, res) => {
   try {
     const email = normalizeEmail(req.body?.email);
+    const authIntent = normalizeAuthIntent(
+      req.body?.intent ?? req.body?.purpose,
+    );
+    const emailPurpose =
+      authIntent === 'signup' ? 'driver_signup' : 'driver_login';
     const purpose = 'driver_login';
 
     if (!email) {
@@ -376,9 +382,9 @@ app.post('/v1/driver/otp/send', async (req, res) => {
       const { error } = await resend.emails.send({
         from: fromEmail,
         to: [email],
-        subject: 'Your CitiRide driver one-time password',
-        html: otpEmailHtml({ code, purpose: 'login', ttlMinutes }),
-        text: otpEmailText({ code, purpose: 'login', ttlMinutes }),
+        subject: otpEmailCopy(emailPurpose).subject,
+        html: otpEmailHtml({ code, purpose: emailPurpose, ttlMinutes }),
+        text: otpEmailText({ code, purpose: emailPurpose, ttlMinutes }),
       });
 
       if (error) {
@@ -698,18 +704,49 @@ function normalizeEmail(value) {
   return email;
 }
 
+function normalizeAuthIntent(value) {
+  const intent = String(value || '')
+    .trim()
+    .toLowerCase();
+  if (
+    intent === 'login' ||
+    intent === 'log-in' ||
+    intent === 'log_in' ||
+    intent === 'driver_login'
+  ) {
+    return 'login';
+  }
+  return 'signup';
+}
+
 function normalizePurpose(value) {
   const purpose = String(value || 'login')
     .trim()
     .toLowerCase();
-  if (['login', 'wallet', 'reset_pin', 'withdraw'].includes(purpose)) {
+  if (
+    [
+      'login',
+      'signup',
+      'wallet',
+      'reset_pin',
+      'withdraw',
+      'driver_login',
+      'driver_signup',
+    ].includes(purpose)
+  ) {
     return purpose;
   }
   return 'login';
 }
 
 function storeKey(email, purpose) {
-  return `${purpose}:${email}`;
+  const bucket =
+    purpose === 'signup'
+      ? 'login'
+      : purpose === 'driver_signup'
+        ? 'driver_login'
+        : purpose;
+  return `${bucket}:${email}`;
 }
 
 function generateOtp() {

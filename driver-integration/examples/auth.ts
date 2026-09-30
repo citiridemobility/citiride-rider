@@ -44,8 +44,14 @@ async function postJson<T>(path: string, body: Record<string, unknown>): Promise
   return data;
 }
 
-export function sendDriverOtp(email: string) {
-  return postJson<DriverOtpSendResult>('/v1/driver/otp/send', { email });
+export function sendDriverOtp(
+  email: string,
+  intent: 'signup' | 'login' = 'login',
+) {
+  return postJson<DriverOtpSendResult>('/v1/driver/otp/send', {
+    email,
+    intent,
+  });
 }
 
 export function verifyDriverOtp(email: string, code: string) {

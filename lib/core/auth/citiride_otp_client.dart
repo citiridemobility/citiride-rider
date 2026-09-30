@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 
 import 'citiride_auth_service.dart';
 
-enum CitirideOtpPurpose { login, wallet, resetPin, withdraw }
+enum CitirideOtpPurpose { signup, login, wallet, resetPin, withdraw }
 
 class CitirideOtpClient {
   CitirideOtpClient({http.Client? client, String? baseUrl})
@@ -176,6 +176,7 @@ class CitirideOtpClient {
 
   String _purposeValue(CitirideOtpPurpose purpose) {
     return switch (purpose) {
+      CitirideOtpPurpose.signup => 'signup',
       CitirideOtpPurpose.login => 'login',
       CitirideOtpPurpose.wallet => 'wallet',
       CitirideOtpPurpose.resetPin => 'reset_pin',

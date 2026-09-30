@@ -4,10 +4,12 @@ import 'package:go_router/go_router.dart';
 import '../../app/theme/app_colors.dart';
 import '../../core/auth/citiride_auth_service.dart';
 import '../../core/session/citiride_session_store.dart';
+import '../../features/profile/domain/rider_profile.dart';
 import '../../features/wallet/presentation/wallet_enrollment_store.dart';
 import '../../features/wallet/presentation/wallet_transaction_pin_store.dart';
 
 Future<void> showCitirideLogoutDialog(BuildContext context) {
+  var loggingOut = false;
   return showGeneralDialog<void>(
     context: context,
     barrierDismissible: true,
@@ -30,15 +32,25 @@ Future<void> showCitirideLogoutDialog(BuildContext context) {
           scale: Tween<double>(begin: 0.92, end: 1).animate(curved),
           child: Center(
             child: _LogoutDialogCard(
-              onCancel: () => Navigator.of(dialogContext).pop(),
-              onConfirm: () async {
+              onCancel: () {
+                if (loggingOut) return;
                 Navigator.of(dialogContext).pop();
-                await CitirideAuthService().signOut();
-                await const CitirideSessionStore().clearAuth();
-                await WalletEnrollmentStore.instance.clear();
-                await WalletTransactionPinStore.instance.clear();
-                if (context.mounted) {
-                  context.go('/welcome');
+              },
+              onConfirm: () async {
+                if (loggingOut) return;
+                loggingOut = true;
+                final router = GoRouter.of(context);
+                Navigator.of(dialogContext, rootNavigator: true).pop();
+                try {
+                  await CitirideAuthService().signOut();
+                  await Future.wait<void>([
+                    const CitirideSessionStore().clearAuth(),
+                    RiderProfileStore.instance.clear(),
+                    WalletEnrollmentStore.instance.clear(),
+                    WalletTransactionPinStore.instance.clear(),
+                  ]);
+                } finally {
+                  router.go('/welcome');
                 }
               },
             ),
@@ -123,7 +135,7 @@ class _LogoutDialogCard extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             const Text(
-              'You’ll need to sign in again with your email or phone number to continue riding.',
+              'You’ll need to sign in again with your email to continue riding.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Color(0xFFA0A0A0),

@@ -45,6 +45,11 @@ class _EnterCodeScreenState extends State<EnterCodeScreen> {
   bool _hideVerificationContent = false;
   bool _loadingDialogVisible = false;
 
+  bool get _isLogin => widget.intent == 'login';
+
+  CitirideOtpPurpose get _otpPurpose =>
+      _isLogin ? CitirideOtpPurpose.login : CitirideOtpPurpose.signup;
+
   bool get _isComplete => _code.length == _codeLength;
 
   bool get _canContinue =>
@@ -191,7 +196,7 @@ class _EnterCodeScreenState extends State<EnterCodeScreen> {
     return _authService.confirmEmailCode(
       code: _code,
       email: _emailAddress,
-      purpose: CitirideOtpPurpose.login,
+      purpose: _otpPurpose,
     );
   }
 
@@ -274,7 +279,7 @@ class _EnterCodeScreenState extends State<EnterCodeScreen> {
     try {
       await _authService.startEmailVerification(
         email: _emailAddress,
-        purpose: CitirideOtpPurpose.login,
+        purpose: _otpPurpose,
       );
     } on CitirideAuthException catch (error) {
       if (!mounted) {

@@ -5,6 +5,9 @@ import {
   fetchCustomer,
   fetchDedicatedAccountById,
   fetchDedicatedAccounts,
+  fetchPaystackBalanceKobo,
+  fetchTransfer,
+  fetchTransferFeeKobo,
   initiateTransfer,
   isPaystackTestMode,
   listPaystackTransactions,
@@ -61,6 +64,44 @@ function sleep(ms) {
 function isSuccessStatus(status) {
   const value = String(status || '').toLowerCase();
   return !value || value === 'success' || value === 'successful' || value === 'paid';
+}
+
+function channelOf(data = {}) {
+  return String(data?.authorization?.channel || data?.channel || '').toLowerCase();
+}
+
+function isBankCollectionChannel(channel) {
+  return (
+    String(channel || '').includes('dedicated') ||
+    String(channel || '') === 'bank_transfer' ||
+    String(channel || '') === 'dedicated_nuban'
+  );
+}
+
+/**
+ * Paystack "customer pays fees" does not apply to DVA/NIP. Credit the net
+ * amount so the collection fee comes out of the deposit, not the merchant.
+ */
+function netCreditKobo(data, fallbackAmount) {
+  const amount = Math.round(Number(data?.amount || fallbackAmount || 0));
+  const fees = Math.max(0, Math.round(Number(data?.fees || 0)));
+  if (!Number.isFinite(amount) || amount <= 0) return 0;
+  if (fees > 0 && isBankCollectionChannel(channelOf(data))) {
+    return Math.max(0, amount - fees);
+  }
+  return amount;
+}
+
+function transferEventNameFromStatus(status) {
+  const value = String(status || '').toLowerCase();
+  if (value === 'success' || value === 'successful' || value === 'received') {
+    return 'transfer.success';
+  }
+  if (value === 'reversed') return 'transfer.reversed';
+  if (value === 'failed' || value === 'abandoned' || value === 'blocked') {
+    return 'transfer.failed';
+  }
+  return null;
 }
 
 function chargeFromUnknown(payload) {
@@ -573,6 +614,12 @@ export async function ensureFundingAccount(userId, profile = {}) {
 }
 
 export async function listTransactions(userId, { limit = 30 } = {}) {
+  try {
+    await syncPaystackWithdrawals(userId);
+  } catch (error) {
+    console.warn('sync Paystack withdrawals failed', error.message || error);
+  }
+
   const db = getFirestore();
   const snap = await db
     .collection(TXNS)
@@ -701,6 +748,10 @@ export async function handleChargeSuccess(eventData, { userId: knownUserId } = {
       data.channel ||
       '',
   );
+  const creditKobo = netCreditKobo({ ...verifiedData, channel }, amountKobo);
+  if (creditKobo <= 0) {
+    return { ok: false, reason: 'ignored' };
+  }
   const customerCode =
     verifiedData.customer?.customer_code ||
     data.customer?.customer_code ||
@@ -777,7 +828,7 @@ export async function handleChargeSuccess(eventData, { userId: knownUserId } = {
 
   await creditWalletTx({
     userId,
-    amountKobo: Number(verifiedData.amount || amountKobo),
+    amountKobo: creditKobo,
     reference,
     providerReference: String(verifiedData.id || data.id || ''),
     title: 'Wallet Top Up',
@@ -785,10 +836,41 @@ export async function handleChargeSuccess(eventData, { userId: knownUserId } = {
       channel,
       paidAt: verifiedData.paid_at || data.paid_at || null,
       authorization: data.authorization || null,
+      grossKobo: Number(verifiedData.amount || amountKobo),
+      feesKobo: Number(verifiedData.fees || 0),
     },
   });
 
   return { ok: true, userId, reference };
+}
+
+function formatNairaFromKobo(kobo) {
+  return `₦${fromKobo(kobo).toFixed(2)}`;
+}
+
+function isPaystackPayoutBalanceError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  const code = String(
+    error?.paystack?.code || error?.paystack?.data?.code || '',
+  ).toLowerCase();
+  return (
+    code === 'insufficient_balance' ||
+    message.includes('enough balance') ||
+    message.includes('balance is not enough') ||
+    message.includes('not enough to fulfil') ||
+    message.includes('not enough to fulfill') ||
+    (message.includes('insufficient') && message.includes('balance'))
+  );
+}
+
+function payoutBalanceError({ walletKobo, amountKobo, paystackKobo, feeKobo }) {
+  const payout = formatNairaFromKobo(paystackKobo || 0);
+  const needed = formatNairaFromKobo(amountKobo + Math.max(0, feeKobo || 0));
+  return (
+    `Your wallet has ${formatNairaFromKobo(walletKobo)}, which covers this ${formatNairaFromKobo(amountKobo)} withdrawal. ` +
+    `Bank transfers are sent from the CitiRide Paystack payout balance (${payout} available, ${needed} needed including fees). ` +
+    `Keep DVA deposits in Paystack by turning off auto-settlement to the business bank, or fund the Paystack balance, then try again.`
+  );
 }
 
 export async function requestWithdrawal({
@@ -827,24 +909,79 @@ export async function requestWithdrawal({
   const txnRef = db.collection(TXNS).doc(reference);
   const withdrawalRef = db.collection(WITHDRAWALS).doc(reference);
 
+  const walletSnap = await walletRef.get();
+  if (!walletSnap.exists) {
+    throw new Error('Wallet not found');
+  }
+  const availableBefore = Number(walletSnap.data()?.availableBalanceKobo || 0);
+
+  let paystackBalanceKobo = null;
+  let feeKobo = 1000;
+  try {
+    [paystackBalanceKobo, feeKobo] = await Promise.all([
+      fetchPaystackBalanceKobo('NGN'),
+      fetchTransferFeeKobo(amountKobo, 'NGN'),
+    ]);
+  } catch (error) {
+    console.warn('Paystack payout balance lookup failed', error.message || error);
+  }
+
+  const payoutKobo = amountKobo;
+  const payoutFeeKobo = Math.max(0, Number(feeKobo) || 0);
+  const debitKobo = payoutKobo + payoutFeeKobo;
+
+  if (availableBefore < debitKobo) {
+    throw new Error(
+      payoutFeeKobo > 0
+        ? `Insufficient wallet balance. Available ${formatNairaFromKobo(availableBefore)}, requested ${formatNairaFromKobo(payoutKobo)} plus ${formatNairaFromKobo(payoutFeeKobo)} transfer fee.`
+        : `Insufficient wallet balance. Available ${formatNairaFromKobo(availableBefore)}, requested ${formatNairaFromKobo(payoutKobo)}.`,
+    );
+  }
+
+  const requiredPayoutKobo = debitKobo;
+  if (
+    paystackBalanceKobo != null &&
+    paystackBalanceKobo < requiredPayoutKobo
+  ) {
+    console.warn('wallet withdraw blocked: Paystack payout balance', {
+      userId,
+      amountKobo: payoutKobo,
+      feeKobo: payoutFeeKobo,
+      walletKobo: availableBefore,
+      paystackKobo: paystackBalanceKobo,
+    });
+    throw new Error(
+      payoutBalanceError({
+        walletKobo: availableBefore,
+        amountKobo: payoutKobo,
+        paystackKobo: paystackBalanceKobo,
+        feeKobo: payoutFeeKobo,
+      }),
+    );
+  }
+
   await db.runTransaction(async (tx) => {
-    const walletSnap = await tx.get(walletRef);
-    if (!walletSnap.exists) {
+    const snap = await tx.get(walletRef);
+    if (!snap.exists) {
       throw new Error('Wallet not found');
     }
-    const wallet = walletSnap.data() || {};
+    const wallet = snap.data() || {};
     const available = Number(wallet.availableBalanceKobo || 0);
-    if (available < amountKobo) {
-      throw new Error('Insufficient wallet balance');
+    if (available < debitKobo) {
+      throw new Error(
+        payoutFeeKobo > 0
+          ? `Insufficient wallet balance. Available ${formatNairaFromKobo(available)}, requested ${formatNairaFromKobo(payoutKobo)} plus ${formatNairaFromKobo(payoutFeeKobo)} transfer fee.`
+          : `Insufficient wallet balance. Available ${formatNairaFromKobo(available)}, requested ${formatNairaFromKobo(payoutKobo)}.`,
+      );
     }
-    const after = available - amountKobo;
+    const after = available - debitKobo;
     const now = new Date();
 
     tx.set(
       walletRef,
       {
         availableBalanceKobo: after,
-        pendingBalanceKobo: Number(wallet.pendingBalanceKobo || 0) + amountKobo,
+        pendingBalanceKobo: Number(wallet.pendingBalanceKobo || 0) + payoutKobo,
         updatedAt: now,
       },
       { merge: true },
@@ -856,7 +993,7 @@ export async function requestWithdrawal({
       reference,
       type: 'withdrawal',
       title: 'Withdrawal to Bank',
-      amountKobo,
+      amountKobo: debitKobo,
       balanceBeforeKobo: available,
       balanceAfterKobo: after,
       status: 'pending',
@@ -866,6 +1003,8 @@ export async function requestWithdrawal({
         bankName: bankName || null,
         accountNumber,
         accountName: resolvedName,
+        payoutKobo,
+        feeKobo: payoutFeeKobo,
       },
       createdAt: now,
       updatedAt: now,
@@ -875,8 +1014,9 @@ export async function requestWithdrawal({
       userId,
       walletId: userId,
       reference,
-      amountKobo,
-      feeKobo: 0,
+      amountKobo: payoutKobo,
+      feeKobo: payoutFeeKobo,
+      debitKobo,
       bankCode,
       bankName: bankName || null,
       accountNumber,
@@ -890,26 +1030,49 @@ export async function requestWithdrawal({
 
   try {
     const transfer = await initiateTransfer({
-      amountKobo,
+      amountKobo: payoutKobo,
       recipientCode,
       reference,
       reason: 'CitiRide rider wallet withdrawal',
     });
+
+    const paystackStatus = String(transfer.data?.status || '').toLowerCase();
+    const settledNow = transferEventNameFromStatus(paystackStatus) === 'transfer.success';
+    const now = new Date();
 
     await withdrawalRef.set(
       {
         status: 'processing',
         paystackTransferCode: transfer.data?.transfer_code || null,
         paystackTransferId: transfer.data?.id || null,
-        updatedAt: new Date(),
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+    await txnRef.set(
+      {
+        status: 'processing',
+        providerReference: String(transfer.data?.transfer_code || transfer.data?.id || ''),
+        updatedAt: now,
       },
       { merge: true },
     );
 
+    if (settledNow) {
+      try {
+        await handleTransferEvent('transfer.success', {
+          data: { ...transfer.data, reference, status: 'success' },
+        });
+      } catch (error) {
+        console.warn('transfer success settle failed', reference, error.message || error);
+      }
+    }
+
     return {
       reference,
-      status: 'processing',
-      amount: fromKobo(amountKobo),
+      status: settledNow ? 'successful' : 'processing',
+      amount: fromKobo(payoutKobo),
+      fee: fromKobo(payoutFeeKobo),
       accountName: resolvedName,
     };
   } catch (error) {
@@ -922,10 +1085,10 @@ export async function requestWithdrawal({
         walletRef,
         {
           availableBalanceKobo:
-            Number(wallet.availableBalanceKobo || 0) + amountKobo,
+            Number(wallet.availableBalanceKobo || 0) + debitKobo,
           pendingBalanceKobo: Math.max(
             0,
-            Number(wallet.pendingBalanceKobo || 0) - amountKobo,
+            Number(wallet.pendingBalanceKobo || 0) - payoutKobo,
           ),
           updatedAt: now,
         },
@@ -950,7 +1113,59 @@ export async function requestWithdrawal({
         { merge: true },
       );
     });
+    if (isPaystackPayoutBalanceError(error)) {
+      throw new Error(
+        payoutBalanceError({
+          walletKobo: availableBefore,
+          amountKobo: payoutKobo,
+          paystackKobo: paystackBalanceKobo,
+          feeKobo: payoutFeeKobo,
+        }),
+      );
+    }
     throw error;
+  }
+}
+
+export async function syncPaystackWithdrawals(userId) {
+  const db = getFirestore();
+  const snap = await db
+    .collection(WITHDRAWALS)
+    .where('userId', '==', userId)
+    .limit(25)
+    .get();
+
+  for (const doc of snap.docs) {
+    const row = doc.data() || {};
+    const status = String(row.status || '').toLowerCase();
+    if (!['pending', 'processing'].includes(status)) {
+      continue;
+    }
+    const lookup =
+      row.paystackTransferCode || row.paystackTransferId || row.reference;
+    if (!lookup) {
+      continue;
+    }
+    try {
+      const payload = await fetchTransfer(lookup);
+      const data = payload.data || {};
+      const eventName = transferEventNameFromStatus(data.status);
+      if (!eventName) {
+        continue;
+      }
+      await handleTransferEvent(eventName, {
+        data: {
+          ...data,
+          reference: row.reference || data.reference,
+        },
+      });
+    } catch (error) {
+      console.warn(
+        'sync Paystack withdrawal failed',
+        row.reference,
+        error.message || error,
+      );
+    }
   }
 }
 
@@ -966,15 +1181,20 @@ export async function handleTransferEvent(eventName, eventData) {
   const txnRef = db.collection(TXNS).doc(reference);
   const eventRef = db.collection(PROCESSED).doc(`transfer_${eventName}_${reference}`);
 
-  const success =
+  const mapped = transferEventNameFromStatus(
     eventName === 'transfer.success' ||
-    String(data.status || '').toLowerCase() === 'success';
-  const failed =
-    eventName === 'transfer.failed' ||
-    eventName === 'transfer.reversed' ||
-    ['failed', 'reversed', 'otp'].includes(
-      String(data.status || '').toLowerCase(),
-    );
+      eventName === 'transfer.failed' ||
+      eventName === 'transfer.reversed'
+      ? eventName.replace('transfer.', '')
+      : data.status,
+  );
+  const success = mapped === 'transfer.success';
+  const failed = mapped === 'transfer.failed' || mapped === 'transfer.reversed';
+  const reversed = mapped === 'transfer.reversed' || eventName === 'transfer.reversed';
+
+  if (!success && !failed) {
+    return { ok: false, reason: 'ignored_status' };
+  }
 
   await db.runTransaction(async (tx) => {
     const processed = await tx.get(eventRef);
@@ -987,7 +1207,14 @@ export async function handleTransferEvent(eventName, eventData) {
     }
 
     const withdrawal = withdrawalSnap.data() || {};
-    const amountKobo = Number(withdrawal.amountKobo || 0);
+    const alreadyDone = ['successful', 'failed', 'reversed'].includes(
+      String(withdrawal.status || '').toLowerCase(),
+    );
+    const payoutKobo = Number(withdrawal.amountKobo || 0);
+    const feeKobo = Number(withdrawal.feeKobo || 0);
+    const debitKobo = Number(
+      withdrawal.debitKobo || payoutKobo + feeKobo,
+    );
     const userId = withdrawal.userId;
     const walletRef = db.collection(WALLETS).doc(userId);
     const walletSnap = await tx.get(walletRef);
@@ -1009,22 +1236,24 @@ export async function handleTransferEvent(eventName, eventData) {
         { status: 'successful', updatedAt: now },
         { merge: true },
       );
-      tx.set(
-        walletRef,
-        {
-          pendingBalanceKobo: Math.max(
-            0,
-            Number(wallet.pendingBalanceKobo || 0) - amountKobo,
-          ),
-          updatedAt: now,
-        },
-        { merge: true },
-      );
+      if (!alreadyDone) {
+        tx.set(
+          walletRef,
+          {
+            pendingBalanceKobo: Math.max(
+              0,
+              Number(wallet.pendingBalanceKobo || 0) - payoutKobo,
+            ),
+            updatedAt: now,
+          },
+          { merge: true },
+        );
+      }
     } else if (failed) {
       tx.set(
         withdrawalRef,
         {
-          status: eventName === 'transfer.reversed' ? 'reversed' : 'failed',
+          status: reversed ? 'reversed' : 'failed',
           failureReason: data.reason || data.failures?.message || null,
           updatedAt: now,
         },
@@ -1033,24 +1262,26 @@ export async function handleTransferEvent(eventName, eventData) {
       tx.set(
         txnRef,
         {
-          status: eventName === 'transfer.reversed' ? 'reversed' : 'failed',
+          status: reversed ? 'reversed' : 'failed',
           updatedAt: now,
         },
         { merge: true },
       );
-      tx.set(
-        walletRef,
-        {
-          availableBalanceKobo:
-            Number(wallet.availableBalanceKobo || 0) + amountKobo,
-          pendingBalanceKobo: Math.max(
-            0,
-            Number(wallet.pendingBalanceKobo || 0) - amountKobo,
-          ),
-          updatedAt: now,
-        },
-        { merge: true },
-      );
+      if (!alreadyDone) {
+        tx.set(
+          walletRef,
+          {
+            availableBalanceKobo:
+              Number(wallet.availableBalanceKobo || 0) + debitKobo,
+            pendingBalanceKobo: Math.max(
+              0,
+              Number(wallet.pendingBalanceKobo || 0) - payoutKobo,
+            ),
+            updatedAt: now,
+          },
+          { merge: true },
+        );
+      }
     }
 
     tx.set(eventRef, {

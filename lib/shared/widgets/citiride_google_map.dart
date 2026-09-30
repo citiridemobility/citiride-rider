@@ -15,8 +15,10 @@ class CitirideGoogleMap extends StatefulWidget {
     required this.fallback,
     required this.fallbackSemanticsLabel,
     this.cameraTarget,
+    this.cameraZoom,
     this.cameraBounds,
     this.cameraBoundsPadding = 72,
+    this.padding = EdgeInsets.zero,
     this.markers = const {},
     this.polylines = const {},
     this.onMapCreated,
@@ -32,8 +34,10 @@ class CitirideGoogleMap extends StatefulWidget {
   final Widget fallback;
   final String fallbackSemanticsLabel;
   final LatLng? cameraTarget;
+  final double? cameraZoom;
   final LatLngBounds? cameraBounds;
   final double cameraBoundsPadding;
+  final EdgeInsets padding;
   final Set<Marker> markers;
   final Set<Polyline> polylines;
   final ValueChanged<GoogleMapController>? onMapCreated;
@@ -77,7 +81,9 @@ class _CitirideGoogleMapState extends State<CitirideGoogleMap> {
     }
 
     final target = widget.cameraTarget;
-    if (target != null && !_sameLatLng(target, oldWidget.cameraTarget)) {
+    if (target != null &&
+        (!_sameLatLng(target, oldWidget.cameraTarget) ||
+            widget.cameraZoom != oldWidget.cameraZoom)) {
       _moveCamera(target);
     }
   }
@@ -102,7 +108,11 @@ class _CitirideGoogleMapState extends State<CitirideGoogleMap> {
       return;
     }
 
-    await _applyCameraUpdate(CameraUpdate.newLatLng(target));
+    await _applyCameraUpdate(
+      widget.cameraZoom == null
+          ? CameraUpdate.newLatLng(target)
+          : CameraUpdate.newLatLngZoom(target, widget.cameraZoom!),
+    );
   }
 
   Future<void> _fitBounds(LatLngBounds bounds) async {
@@ -184,7 +194,7 @@ class _CitirideGoogleMapState extends State<CitirideGoogleMap> {
     return GoogleMap(
       initialCameraPosition: CameraPosition(
         target: target,
-        zoom: GoogleMapsConfig.defaultZoom,
+        zoom: widget.cameraZoom ?? GoogleMapsConfig.defaultZoom,
       ),
       onMapCreated: (controller) {
         _mapController = controller;
@@ -213,10 +223,15 @@ class _CitirideGoogleMapState extends State<CitirideGoogleMap> {
         final target = widget.cameraTarget;
         if (target != null) {
           unawaited(
-            _moveCameraWithoutAnimation(CameraUpdate.newLatLng(target)),
+            _moveCameraWithoutAnimation(
+              widget.cameraZoom == null
+                  ? CameraUpdate.newLatLng(target)
+                  : CameraUpdate.newLatLngZoom(target, widget.cameraZoom!),
+            ),
           );
         }
       },
+      padding: widget.padding,
       // JSON map styles are unreliable on google_maps_flutter_web (blank tiles).
       style: kIsWeb ? null : _darkMapStyle,
       markers: widget.markers,

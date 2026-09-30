@@ -103,7 +103,7 @@ class _WalletAddMoneyScreenState extends State<WalletAddMoneyScreen> {
         _checkingPayment = false;
       });
 
-      const credited = wallet.availableBalance > before;
+      final credited = wallet.availableBalance > before;
       final checkingMessage = wallet.testMode
           ? 'Paystack is rechecking this account. In test mode, use Paystack Demo Bank (not your real bank app), or tap Simulate test deposit.'
           : 'No new transfer found yet. Confirm the ₦ went to this Wema account. If Paystack already shows it, wait a few seconds and tap again.';

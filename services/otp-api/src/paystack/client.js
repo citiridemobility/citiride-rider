@@ -224,8 +224,53 @@ export async function initiateTransfer({
       recipient: recipientCode,
       reference,
       reason: reason || 'CitiRide wallet withdrawal',
+      currency: 'NGN',
     },
   });
+}
+
+export async function fetchTransfer(idOrCodeOrReference) {
+  return paystackRequest(
+    `/transfer/${encodeURIComponent(idOrCodeOrReference)}`,
+  );
+}
+
+/**
+ * Paystack Transfer payouts come from the integration available balance
+ * (kobo), not from a customer's DVA or the in-app wallet ledger.
+ */
+export async function fetchPaystackBalanceKobo(currency = 'NGN') {
+  const payload = await paystackRequest('/balance');
+  const rows = Array.isArray(payload.data) ? payload.data : [];
+  const wanted = String(currency || 'NGN').toUpperCase();
+  const match =
+    rows.find((row) => String(row?.currency || '').toUpperCase() === wanted) ||
+    rows[0];
+  return Math.max(0, Math.round(Number(match?.balance || 0)));
+}
+
+/**
+ * NGN payouts charge a Paystack fee on top of the amount. Prefer the
+ * Transfer Fee API; fall back to ₦10 when Paystack does not return a fee.
+ */
+export async function fetchTransferFeeKobo(amountKobo, currency = 'NGN') {
+  try {
+    const params = new URLSearchParams({
+      amount: String(Math.round(Number(amountKobo) || 0)),
+      currency: String(currency || 'NGN').toUpperCase(),
+    });
+    const payload = await paystackRequest(`/transfer/fee?${params.toString()}`);
+    const rows = Array.isArray(payload.data) ? payload.data : [];
+    const raw = Number(rows[0]?.fee ?? rows[0]?.amount ?? 0);
+    if (!Number.isFinite(raw) || raw <= 0) {
+      return 1000;
+    }
+    // Some Paystack fee payloads use naira (10) instead of kobo (1000).
+    return raw < 100 ? Math.round(raw * 100) : Math.round(raw);
+  } catch (error) {
+    console.warn('Paystack transfer fee lookup failed', error.message || error);
+    return 1000;
+  }
 }
 
 export async function listPaystackTransactions({

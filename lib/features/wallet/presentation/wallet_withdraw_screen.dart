@@ -36,16 +36,21 @@ class _WalletWithdrawScreenState extends State<WalletWithdrawScreen> {
   bool _resolvingAccount = false;
   String? _resolvedAccountName;
   String? _resolveError;
+  double? _availableBalance;
 
   bool get _canWithdraw {
     final account = _accountController.text.trim();
     final amount = _parseAmount(_amountController.text);
+    final hasBalance =
+        _availableBalance == null ||
+        (amount != null && amount <= _availableBalance!);
     return !_isSubmitting &&
         !_resolvingAccount &&
         account.length == 10 &&
         (_resolvedAccountName?.trim().isNotEmpty ?? false) &&
         amount != null &&
-        amount > 0;
+        amount >= 100 &&
+        hasBalance;
   }
 
   @override
@@ -54,6 +59,7 @@ class _WalletWithdrawScreenState extends State<WalletWithdrawScreen> {
     _selectedBank = widget.initialBank;
     _accountController.addListener(_onFieldsChanged);
     _amountController.addListener(_onAmountEdited);
+    unawaited(_loadWalletBalance());
   }
 
   @override
@@ -83,6 +89,36 @@ class _WalletWithdrawScreenState extends State<WalletWithdrawScreen> {
     setState(() {
       _selectedPreset = _presets.contains(amount) ? amount : null;
     });
+  }
+
+  Future<void> _loadWalletBalance() async {
+    try {
+      final wallet = await _walletClient.fetchWallet();
+      if (!mounted) return;
+      setState(() => _availableBalance = wallet.availableBalance);
+    } catch (_) {
+      // Withdraw can still be attempted; the API re-checks balance.
+    }
+  }
+
+  String _formatBalance(double value) {
+    return '₦${value.toStringAsFixed(2).replaceAllMapped(
+      RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+      (match) => '${match[1]},',
+    )}';
+  }
+
+  String? _amountHint() {
+    final amount = _parseAmount(_amountController.text);
+    if (amount == null) return null;
+    if (amount < 100) {
+      return 'Minimum withdrawal is ₦100.';
+    }
+    final available = _availableBalance;
+    if (available != null && amount > available) {
+      return 'Available balance is ${_formatBalance(available)}.';
+    }
+    return null;
   }
 
   Future<void> _resolveAccount() async {
@@ -183,6 +219,23 @@ class _WalletWithdrawScreenState extends State<WalletWithdrawScreen> {
     final amount = _parseAmount(_amountController.text);
     final accountName = _resolvedAccountName?.trim() ?? '';
     if (amount == null || accountName.isEmpty) {
+      return;
+    }
+    if (amount < 100) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Minimum withdrawal is ₦100.')),
+      );
+      return;
+    }
+    final available = _availableBalance;
+    if (available != null && amount > available) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Available balance is ${_formatBalance(available)}.',
+          ),
+        ),
+      );
       return;
     }
 
@@ -312,6 +365,26 @@ class _WalletWithdrawScreenState extends State<WalletWithdrawScreen> {
                           ],
                           prefixText: '₦',
                         ),
+                        if (_availableBalance != null) ...[
+                          const SizedBox(height: 10),
+                          Text(
+                            'Available ${_formatBalance(_availableBalance!)}',
+                            style: const TextStyle(
+                              color: Color(0xFF8F8F8F),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                        if (_amountHint() != null) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            _amountHint()!,
+                            style: const TextStyle(
+                              color: Color(0xFFFF8A8A),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 14),
                         Row(
                           children: [

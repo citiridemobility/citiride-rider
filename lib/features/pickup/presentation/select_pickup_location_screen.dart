@@ -342,8 +342,17 @@ class _SelectPickupLocationScreenState
                 Positioned.fill(
                   child: _PickupMap(
                     route: _route,
+                    pickupLatLng: _pickupLatLng,
                     isLoadingRoute: _isLoadingRoute,
-                    fitRouteInView: !_holdCameraOnUserPickup,
+                    holdCameraOnUserPickup: _holdCameraOnUserPickup,
+                    mapPadding: EdgeInsets.only(
+                      top: math.max(
+                            MediaQuery.paddingOf(context).top + 12,
+                            50,
+                          ) +
+                          88,
+                      bottom: panelHeight,
+                    ),
                     onMapTap: (location) =>
                         unawaited(_setPickupFromMap(location)),
                     onMapGestureStart: _beginPickupMapMove,
@@ -393,8 +402,10 @@ class _SelectPickupLocationScreenState
 class _PickupMap extends StatelessWidget {
   const _PickupMap({
     required this.route,
+    required this.pickupLatLng,
     required this.isLoadingRoute,
-    this.fitRouteInView = true,
+    required this.holdCameraOnUserPickup,
+    required this.mapPadding,
     this.onMapTap,
     this.onMapGestureStart,
     this.onCameraMove,
@@ -402,8 +413,10 @@ class _PickupMap extends StatelessWidget {
   });
 
   final CitirideRoute? route;
+  final LatLng? pickupLatLng;
   final bool isLoadingRoute;
-  final bool fitRouteInView;
+  final bool holdCameraOnUserPickup;
+  final EdgeInsets mapPadding;
   final ValueChanged<LatLng>? onMapTap;
   final VoidCallback? onMapGestureStart;
   final ValueChanged<CameraPosition>? onCameraMove;
@@ -421,7 +434,13 @@ class _PickupMap extends StatelessWidget {
             route: route,
             showCars: false,
             showPickupMarker: false,
-            fitRouteInView: fitRouteInView,
+            showDestinationMarker: false,
+            fitRouteInView: false,
+            cameraFocus: holdCameraOnUserPickup
+                ? null
+                : (pickupLatLng ?? route?.routeStart),
+            cameraZoom: 16,
+            mapPadding: mapPadding,
             fallbackSemanticsLabel: 'Pickup map background',
             routeSemanticsLabel: 'Pickup route direction',
             onMapTap: onMapTap,
@@ -429,12 +448,18 @@ class _PickupMap extends StatelessWidget {
             onCameraIdle: onCameraIdle,
           ),
         ),
-        const IgnorePointer(
-          child: Center(
-            child: CitirideLocationStatusPulse(
-              size: 112,
-              iconSize: 68,
-              semanticsLabel: 'Movable pickup location',
+        Positioned(
+          left: 0,
+          right: 0,
+          top: mapPadding.top,
+          bottom: mapPadding.bottom,
+          child: const IgnorePointer(
+            child: Center(
+              child: CitirideLocationStatusPulse(
+                size: 112,
+                iconSize: 68,
+                semanticsLabel: 'Movable pickup location',
+              ),
             ),
           ),
         ),

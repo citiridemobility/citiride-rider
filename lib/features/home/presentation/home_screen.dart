@@ -391,7 +391,6 @@ class _HomeMapBackground extends StatelessWidget {
   final bool showLocationStatus;
 
   static const _designSize = Size(390, 844);
-  static const _carsFrame = Rect.fromLTWH(24, 164, 347, 455);
 
   @override
   Widget build(BuildContext context) {
@@ -424,17 +423,6 @@ class _HomeMapBackground extends StatelessWidget {
                         'assets/images/Basemap image.svg',
                         fit: BoxFit.fill,
                         semanticsLabel: 'Home basemap',
-                      ),
-                      Positioned(
-                        left: _carsFrame.left * scale,
-                        top: _carsFrame.top * scale,
-                        width: _carsFrame.width * scale,
-                        height: _carsFrame.height * scale,
-                        child: const CompatibleSvgPicture.asset(
-                          'assets/images/Cars.svg',
-                          fit: BoxFit.fill,
-                          semanticsLabel: 'Map cars',
-                        ),
                       ),
                       DecoratedBox(
                         decoration: BoxDecoration(
@@ -834,7 +822,6 @@ class _ProfileSidebar extends StatelessWidget {
                   subtitle: 'Log out from your account',
                   isDestructive: true,
                   onTap: () {
-                    onClose();
                     showCitirideLogoutDialog(context);
                   },
                 ),

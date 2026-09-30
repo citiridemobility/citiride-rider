@@ -23,29 +23,85 @@ export function publicLogoUrl() {
   return `${withProtocol}/assets/citiride-logo.png`;
 }
 
-function otpPurposeLabel(purpose) {
-  if (purpose === 'wallet') {
-    return 'wallet setup';
+export function otpEmailCopy(purpose) {
+  switch (purpose) {
+    case 'login':
+      return {
+        subject: 'Your CitiRide login code',
+        title: 'Log in to CitiRide',
+        label: 'login',
+        intro:
+          'Use this one-time password to log in to your CitiRide rider account. Do not share it with anyone.',
+      };
+    case 'driver_login':
+      return {
+        subject: 'Your CitiRide driver login code',
+        title: 'Log in to CitiRide',
+        label: 'driver login',
+        intro:
+          'Use this one-time password to log in to your CitiRide driver account. Do not share it with anyone.',
+      };
+    case 'signup':
+      return {
+        subject: 'Your CitiRide sign-up code',
+        title: 'Finish signing up',
+        label: 'sign-up',
+        intro:
+          'Use this one-time password to create your CitiRide rider account. Do not share it with anyone.',
+      };
+    case 'driver_signup':
+      return {
+        subject: 'Your CitiRide driver sign-up code',
+        title: 'Finish signing up',
+        label: 'driver sign-up',
+        intro:
+          'Use this one-time password to create your CitiRide driver account. Do not share it with anyone.',
+      };
+    case 'wallet':
+      return {
+        subject: 'Your CitiRide wallet code',
+        title: 'Your one-time password',
+        label: 'wallet setup',
+        intro:
+          'Use this one-time password (OTP) to continue your CitiRide wallet setup. Do not share it with anyone.',
+      };
+    case 'reset_pin':
+      return {
+        subject: 'Your CitiRide PIN reset code',
+        title: 'Your one-time password',
+        label: 'PIN reset',
+        intro:
+          'Use this one-time password (OTP) to continue your CitiRide PIN reset. Do not share it with anyone.',
+      };
+    case 'withdraw':
+      return {
+        subject: 'Your CitiRide withdrawal code',
+        title: 'Your one-time password',
+        label: 'wallet withdrawal',
+        intro:
+          'Use this one-time password (OTP) to continue your CitiRide wallet withdrawal. Do not share it with anyone.',
+      };
+    default:
+      return {
+        subject: 'Your CitiRide sign-up code',
+        title: 'Finish signing up',
+        label: 'sign-up',
+        intro:
+          'Use this one-time password to create your CitiRide account. Do not share it with anyone.',
+      };
   }
-  if (purpose === 'reset_pin') {
-    return 'PIN reset';
-  }
-  if (purpose === 'withdraw') {
-    return 'wallet withdrawal';
-  }
-  return 'sign-up';
 }
 
 export function otpEmailHtml({ code, purpose, ttlMinutes }) {
-  const purposeLabel = otpPurposeLabel(purpose);
+  const copy = otpEmailCopy(purpose);
   const safeCode = escapeHtml(code);
 
   return emailShell({
-    preheader: `Your CitiRide one-time password is ${code}`,
-    title: 'Your one-time password',
+    preheader: `${copy.subject} is ${code}`,
+    title: copy.title,
     bodyHtml: `
       <p style="margin:0 0 24px;color:${brand.muted};font-size:15px;line-height:1.6;font-family:${brand.font};">
-        Use this one-time password (OTP) to continue your CitiRide ${escapeHtml(purposeLabel)}. Do not share it with anyone.
+        ${escapeHtml(copy.intro)}
       </p>
       <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 24px;border-collapse:collapse;">
         <tr>
@@ -67,12 +123,14 @@ export function otpEmailHtml({ code, purpose, ttlMinutes }) {
 }
 
 export function otpEmailText({ code, purpose, ttlMinutes }) {
-  const purposeLabel = otpPurposeLabel(purpose);
+  const copy = otpEmailCopy(purpose);
 
   return [
     'CitiRide',
     '',
-    `Your one-time password (OTP) for ${purposeLabel}: ${code}`,
+    copy.intro,
+    '',
+    `Your one-time password (OTP) for ${copy.label}: ${code}`,
     `Expires in ${ttlMinutes} minutes.`,
     'Do not share this code with anyone.',
     '',

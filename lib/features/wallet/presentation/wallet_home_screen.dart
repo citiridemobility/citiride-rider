@@ -12,7 +12,7 @@ import '../../profile/domain/rider_profile.dart';
 import 'wallet_select_bank_sheet.dart';
 import 'wallet_transaction_pin_store.dart';
 
-enum _WalletTxnFilter { all, completed, pending, reversed }
+enum _WalletTxnFilter { all, completed, pending, failed, reversed }
 
 enum _WalletTxnType { payment, topUp, transfer }
 
@@ -34,6 +34,7 @@ class _WalletTransaction {
     this.accountNumber,
     this.accountName,
     this.balanceAfter,
+    this.fee,
   });
 
   final String id;
@@ -52,6 +53,7 @@ class _WalletTransaction {
   final String? accountNumber;
   final String? accountName;
   final String? balanceAfter;
+  final String? fee;
 
   String get typeLabel {
     return switch (rawType) {
@@ -67,6 +69,7 @@ class _WalletTransaction {
     return switch (status) {
       _WalletTxnFilter.completed => 'Successful',
       _WalletTxnFilter.pending => 'Pending',
+      _WalletTxnFilter.failed => 'Failed',
       _WalletTxnFilter.reversed => 'Reversed',
       _WalletTxnFilter.all => '',
     };
@@ -185,15 +188,32 @@ class _WalletHomeScreenState extends State<WalletHomeScreen> {
   }
 
   _WalletTxnFilter _mapStatus(String status) {
-    switch (status) {
+    switch (status.toLowerCase()) {
       case 'successful':
       case 'success':
+      case 'completed':
         return _WalletTxnFilter.completed;
       case 'reversed':
         return _WalletTxnFilter.reversed;
+      case 'failed':
+      case 'abandoned':
+      case 'blocked':
+        return _WalletTxnFilter.failed;
       default:
         return _WalletTxnFilter.pending;
     }
+  }
+
+  String? _metadataFee(Map<String, dynamic> metadata) {
+    final naira = metadata['fee'];
+    if (naira is num && naira > 0) {
+      return _formatMoney(naira.toDouble());
+    }
+    final kobo = metadata['feeKobo'];
+    if (kobo is num && kobo > 0) {
+      return _formatMoney(kobo / 100);
+    }
+    return null;
   }
 
   Future<void> _loadWallet({
@@ -251,6 +271,7 @@ class _WalletHomeScreenState extends State<WalletHomeScreen> {
                 balanceAfter: txn.balanceAfter == null
                     ? null
                     : _formatMoney(txn.balanceAfter!),
+                fee: _metadataFee(txn.metadata),
               ),
             )
             .toList();
@@ -794,6 +815,7 @@ class _WalletFilterChips extends StatelessWidget {
       (_WalletTxnFilter.all, 'All'),
       (_WalletTxnFilter.completed, 'Completed'),
       (_WalletTxnFilter.pending, 'Pending'),
+      (_WalletTxnFilter.failed, 'Failed'),
       (_WalletTxnFilter.reversed, 'Reversed'),
     ];
 
@@ -1085,6 +1107,8 @@ class _WalletTransactionDetailsSheet extends StatelessWidget {
                       label: 'Account number',
                       value: transaction.accountNumber!,
                     ),
+                  if (transaction.fee != null)
+                    _DetailRow(label: 'Transfer fee', value: transaction.fee!),
                   if (transaction.balanceAfter != null)
                     _DetailRow(
                       label: 'Balance after',

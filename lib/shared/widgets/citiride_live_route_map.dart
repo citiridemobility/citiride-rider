@@ -24,6 +24,7 @@ class CitirideLiveRouteMap extends StatefulWidget {
     this.showCars = false,
     this.showPickupPulse = false,
     this.showPickupMarker = true,
+    this.showDestinationMarker = true,
     this.pickupLabelBuilder,
     this.destinationLabelBuilder,
     this.vehicleProgress,
@@ -34,6 +35,9 @@ class CitirideLiveRouteMap extends StatefulWidget {
     this.vehicleMarkerHeight = 34,
     this.cameraBoundsPadding = 104,
     this.fitRouteInView = true,
+    this.cameraFocus,
+    this.cameraZoom,
+    this.mapPadding = EdgeInsets.zero,
     this.nearbyDrivers = const [],
     this.onMapTap,
     this.onCameraMove,
@@ -46,6 +50,7 @@ class CitirideLiveRouteMap extends StatefulWidget {
   final bool showCars;
   final bool showPickupPulse;
   final bool showPickupMarker;
+  final bool showDestinationMarker;
   final String Function(CitirideRoute route)? pickupLabelBuilder;
   final String Function(CitirideRoute route)? destinationLabelBuilder;
   final double? vehicleProgress;
@@ -62,6 +67,11 @@ class CitirideLiveRouteMap extends StatefulWidget {
   /// When false, route updates do not re-fit/recenter the camera (used while
   /// the rider is manually positioning pickup under the center pin).
   final bool fitRouteInView;
+  /// Optional camera target. Pickup selection uses the pickup point so the
+  /// center pin sits on the route start instead of the destination/midpoint.
+  final LatLng? cameraFocus;
+  final double? cameraZoom;
+  final EdgeInsets mapPadding;
   final ValueChanged<LatLng>? onMapTap;
   final ValueChanged<CameraPosition>? onCameraMove;
   final VoidCallback? onCameraIdle;
@@ -215,17 +225,25 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
                 route: route,
                 showCars: widget.showCars,
                 showPickupPulse: widget.showPickupPulse,
+                showDestinationMarker: widget.showDestinationMarker,
                 routeSemanticsLabel: widget.routeSemanticsLabel,
                 pickupLabel: pickupLabel,
-                destinationLabel: destinationLabel,
+                destinationLabel: widget.showDestinationMarker
+                    ? destinationLabel
+                    : '',
               ),
               fallbackSemanticsLabel: widget.fallbackSemanticsLabel,
               cameraTarget: widget.vehiclePosition ??
-                  (widget.fitRouteInView ? route?.center : null),
-              cameraBounds: widget.fitRouteInView && widget.vehiclePosition == null
+                  widget.cameraFocus ??
+                  (widget.fitRouteInView ? route?.center : route?.routeStart),
+              cameraZoom: widget.cameraZoom,
+              cameraBounds: widget.fitRouteInView &&
+                      widget.vehiclePosition == null &&
+                      widget.cameraFocus == null
                   ? route?.latLngBounds
                   : null,
               cameraBoundsPadding: widget.cameraBoundsPadding,
+              padding: widget.mapPadding,
               onMapCreated: _handleMapCreated,
               markers: {
                 if (icons != null && widget.vehiclePosition != null)
@@ -241,7 +259,7 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
                 if (route != null && icons != null) ...{
                   // Prefer Flutter overlay (label + pin). Native pin only while
                   // screen projection is still resolving.
-                  if (_destinationScreen == null)
+                  if (widget.showDestinationMarker && _destinationScreen == null)
                     Marker(
                       markerId: const MarkerId(
                         'citiride-route-destination-pin',
@@ -293,7 +311,8 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
             showPulse: widget.showPickupPulse,
             showStem: true,
           ),
-        if (useMapOverlays &&
+        if (widget.showDestinationMarker &&
+            useMapOverlays &&
             route != null &&
             destinationLabel.trim().isNotEmpty &&
             _destinationScreen != null)
@@ -426,6 +445,7 @@ class _FallbackRouteMap extends StatelessWidget {
     required this.route,
     required this.showCars,
     required this.showPickupPulse,
+    required this.showDestinationMarker,
     required this.routeSemanticsLabel,
     required this.pickupLabel,
     required this.destinationLabel,
@@ -434,6 +454,7 @@ class _FallbackRouteMap extends StatelessWidget {
   final CitirideRoute? route;
   final bool showCars;
   final bool showPickupPulse;
+  final bool showDestinationMarker;
   final String routeSemanticsLabel;
   final String pickupLabel;
   final String destinationLabel;
@@ -505,6 +526,7 @@ class _FallbackRouteMap extends StatelessWidget {
                               pickupLabel: pickupLabel,
                               destinationLabel: destinationLabel,
                               drawPickupPin: !showPickupPulse,
+                              drawDestinationPin: showDestinationMarker,
                             ),
                             size: Size.infinite,
                           ),
@@ -775,12 +797,14 @@ class _FallbackRoutePainter extends CustomPainter {
     required this.pickupLabel,
     required this.destinationLabel,
     required this.drawPickupPin,
+    required this.drawDestinationPin,
   });
 
   final CitirideRoute route;
   final String pickupLabel;
   final String destinationLabel;
   final bool drawPickupPin;
+  final bool drawDestinationPin;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -834,7 +858,7 @@ class _FallbackRoutePainter extends CustomPainter {
       end,
       destinationLabel,
       withHalo: false,
-      drawPin: true,
+      drawPin: drawDestinationPin,
     );
   }
 
@@ -928,7 +952,8 @@ class _FallbackRoutePainter extends CustomPainter {
     return oldDelegate.route != route ||
         oldDelegate.pickupLabel != pickupLabel ||
         oldDelegate.destinationLabel != destinationLabel ||
-        oldDelegate.drawPickupPin != drawPickupPin;
+        oldDelegate.drawPickupPin != drawPickupPin ||
+        oldDelegate.drawDestinationPin != drawDestinationPin;
   }
 }
 

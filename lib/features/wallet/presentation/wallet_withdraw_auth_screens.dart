@@ -198,9 +198,12 @@ class _WalletWithdrawOtpScreenState extends State<WalletWithdrawOtpScreen> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(error.message)));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.message),
+          duration: const Duration(seconds: 8),
+        ),
+      );
     } finally {
       if (mounted) {
         setState(() => _isSubmitting = false);

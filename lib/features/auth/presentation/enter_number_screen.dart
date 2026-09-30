@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../core/auth/citiride_auth_service.dart';
+import '../../../core/auth/citiride_otp_client.dart';
 import '../../profile/domain/rider_profile.dart';
 
 class EnterNumberScreen extends StatefulWidget {
@@ -107,7 +108,12 @@ class _EnterNumberScreenState extends State<EnterNumberScreen> {
         }
       }
 
-      await _authService.startEmailVerification(email: email);
+      await _authService.startEmailVerification(
+        email: email,
+        purpose: isLogin
+            ? CitirideOtpPurpose.login
+            : CitirideOtpPurpose.signup,
+      );
 
       final profile = RiderProfileStore.instance.profile.value;
       await RiderProfileStore.instance.update(profile.copyWith(email: email));
