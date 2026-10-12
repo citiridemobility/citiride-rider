@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../core/auth/citiride_wallet_client.dart';
+import '../../../shared/widgets/citiride_empty_state.dart';
 import 'wallet_banks.dart';
 
 Future<WalletBank?> showWalletSelectBankSheet(BuildContext context) {
@@ -199,10 +200,11 @@ class _SelectBankSheetState extends State<_SelectBankSheet> {
           else if (banks.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 28),
-              child: Text(
-                'No banks match your search.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Color(0xFF8F8F8F)),
+              child: CitirideEmptyState(
+                compact: true,
+                icon: Icons.account_balance_outlined,
+                title: 'No banks found',
+                subtitle: 'Try a different bank name or code.',
               ),
             )
           else
@@ -220,10 +222,7 @@ class _SelectBankSheetState extends State<_SelectBankSheet> {
 }
 
 class _BankOptionTile extends StatelessWidget {
-  const _BankOptionTile({
-    required this.bank,
-    required this.onTap,
-  });
+  const _BankOptionTile({required this.bank, required this.onTap});
 
   final WalletBank bank;
   final VoidCallback onTap;

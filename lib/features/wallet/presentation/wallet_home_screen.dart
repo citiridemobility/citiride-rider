@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../core/auth/citiride_wallet_client.dart';
 import '../../../shared/widgets/citiride_bottom_nav.dart';
+import '../../../shared/widgets/citiride_empty_state.dart';
 import '../../../shared/widgets/compatible_svg_picture.dart';
 import '../../profile/domain/rider_profile.dart';
 import 'wallet_select_bank_sheet.dart';
@@ -440,21 +441,21 @@ class _WalletHomeScreenState extends State<WalletHomeScreen> {
                               ),
                               sliver: _filteredTransactions.isEmpty
                                   ? SliverToBoxAdapter(
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          vertical: 36,
-                                        ),
-                                        child: Text(
-                                          _loading
-                                              ? ''
-                                              : 'No transactions yet',
-                                          textAlign: TextAlign.center,
-                                          style: const TextStyle(
-                                            color: Color(0xFF8F8F8F),
-                                            fontSize: 13,
-                                          ),
-                                        ),
-                                      ),
+                                      child: _loading
+                                          ? const SizedBox(height: 48)
+                                          : const Padding(
+                                              padding: EdgeInsets.symmetric(
+                                                vertical: 12,
+                                              ),
+                                              child: CitirideEmptyState(
+                                                compact: true,
+                                                icon: Icons
+                                                    .receipt_long_outlined,
+                                                title: 'No transactions yet',
+                                                subtitle:
+                                                    'Wallet credits, trip payments, and withdrawals will appear here.',
+                                              ),
+                                            ),
                                     )
                                   : SliverList.separated(
                                       itemCount: _filteredTransactions.length,

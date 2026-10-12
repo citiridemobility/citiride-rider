@@ -37,10 +37,10 @@ void main() {
     );
   }
 
-  testWidgets('rides tab switches to past and opens ride details', (
+  testWidgets('rides tabs show empty states when there is no history', (
     WidgetTester tester,
   ) async {
-    tester.view.physicalSize = const Size(390, 844);
+    tester.view.physicalSize = const Size(430, 932);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -50,53 +50,33 @@ void main() {
 
     expect(find.text('Rides'), findsWidgets);
     expect(find.text('Upcoming Rides'), findsOneWidget);
-    expect(find.text('Lagos Street, Benin City'), findsOneWidget);
+    expect(find.text('No upcoming rides'), findsOneWidget);
+    expect(find.text('Lagos Street, Benin City'), findsNothing);
 
     await tester.tap(find.text('Past'));
     await tester.pump(const Duration(milliseconds: 250));
 
-    expect(find.text('Completed'), findsNWidgets(2));
-    expect(find.text('Cancelled'), findsOneWidget);
-
-    await tester.tap(
-      find.byKey(const ValueKey('ride-card-completed-lagos-ring-road-1')),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('Ride Completed'), findsOneWidget);
-    expect(find.text('Payment'), findsOneWidget);
-    expect(find.text('Cash Payment'), findsOneWidget);
-    expect(find.text('Rebook'), findsNothing);
+    expect(find.text('No past rides'), findsOneWidget);
+    expect(find.text('Completed'), findsNothing);
+    expect(find.text('Cancelled'), findsNothing);
   });
 
-  testWidgets('upcoming ride cancel sheet can keep or cancel ride', (
+  testWidgets('ride details shows empty state when ride is missing', (
     WidgetTester tester,
   ) async {
-    tester.view.physicalSize = const Size(390, 844);
+    tester.view.physicalSize = const Size(430, 932);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(MaterialApp.router(routerConfig: buildRouter()));
+    await tester.pumpWidget(
+      MaterialApp.router(
+        routerConfig: buildRouter(initialLocation: '/ride-details'),
+      ),
+    );
     await tester.pump(const Duration(milliseconds: 250));
 
-    await tester.tap(find.bySemanticsLabel('Cancel ride'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Cancel ride request?'), findsOneWidget);
-    expect(find.text('Keep Ride'), findsOneWidget);
-
-    await tester.tap(find.byKey(const ValueKey('keep-ride-button')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Cancel ride request?'), findsNothing);
-    expect(find.text('Upcoming Rides'), findsOneWidget);
-
-    await tester.tap(find.bySemanticsLabel('Cancel ride'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('confirm-cancel-ride-button')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Select ride'), findsOneWidget);
+    expect(find.text('Ride not found'), findsOneWidget);
+    expect(find.text('This trip is no longer available.'), findsOneWidget);
   });
 }

@@ -54,8 +54,7 @@ class CitirideLiveRouteMap extends StatefulWidget {
   final String Function(CitirideRoute route)? pickupLabelBuilder;
   final String Function(CitirideRoute route)? destinationLabelBuilder;
   final double? vehicleProgress;
-  /// Real nearby driver positions from Firestore. When non-empty, used instead
-  /// of the hardcoded fake nearby cars.
+  /// Real nearby driver positions from Firestore.
   final List<NearbyDriver> nearbyDrivers;
   /// Absolute GPS for the assigned driver (preferred over [vehicleProgress]).
   final LatLng? vehiclePosition;
@@ -67,6 +66,7 @@ class CitirideLiveRouteMap extends StatefulWidget {
   /// When false, route updates do not re-fit/recenter the camera (used while
   /// the rider is manually positioning pickup under the center pin).
   final bool fitRouteInView;
+
   /// Optional camera target. Pickup selection uses the pickup point so the
   /// center pin sits on the route start instead of the destination/midpoint.
   final LatLng? cameraFocus;
@@ -77,8 +77,6 @@ class CitirideLiveRouteMap extends StatefulWidget {
   final VoidCallback? onCameraIdle;
 
   static const designSize = Size(390, 844);
-  static const carsFrame = Rect.fromLTWH(24, 164, 347, 455);
-
   @override
   State<CitirideLiveRouteMap> createState() => _CitirideLiveRouteMapState();
 }
@@ -223,7 +221,6 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
             return CitirideGoogleMap(
               fallback: _FallbackRouteMap(
                 route: route,
-                showCars: widget.showCars,
                 showPickupPulse: widget.showPickupPulse,
                 showDestinationMarker: widget.showDestinationMarker,
                 routeSemanticsLabel: widget.routeSemanticsLabel,
@@ -286,13 +283,14 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
                       icons.vehicle,
                       widget.vehicleProgress!,
                     ),
-                  if (widget.showCars && widget.vehiclePosition == null)
-                    ...(widget.nearbyDrivers.isNotEmpty
-                        ? _realNearbyVehicleMarkers(
-                            widget.nearbyDrivers, icons.vehicle)
-                        : _nearbyVehicleMarkers(route, icons.vehicle)),
-                  if (route != null)
-                    ..._routeDirectionArrowMarkers(route, icons.arrow),
+                  if (widget.showCars &&
+                      widget.vehiclePosition == null &&
+                      widget.nearbyDrivers.isNotEmpty)
+                    ..._realNearbyVehicleMarkers(
+                      widget.nearbyDrivers,
+                      icons.vehicle,
+                    ),
+                  ..._routeDirectionArrowMarkers(route, icons.arrow),
                 },
               },
               onMapTap: widget.onMapTap,
@@ -443,7 +441,6 @@ class _RoutePointOverlay extends StatelessWidget {
 class _FallbackRouteMap extends StatelessWidget {
   const _FallbackRouteMap({
     required this.route,
-    required this.showCars,
     required this.showPickupPulse,
     required this.showDestinationMarker,
     required this.routeSemanticsLabel,
@@ -452,7 +449,6 @@ class _FallbackRouteMap extends StatelessWidget {
   });
 
   final CitirideRoute? route;
-  final bool showCars;
   final bool showPickupPulse;
   final bool showDestinationMarker;
   final String routeSemanticsLabel;
@@ -505,18 +501,6 @@ class _FallbackRouteMap extends StatelessWidget {
                         fit: BoxFit.fill,
                         semanticsLabel: 'Route basemap',
                       ),
-                      if (showCars)
-                        Positioned(
-                          left: CitirideLiveRouteMap.carsFrame.left * scale,
-                          top: CitirideLiveRouteMap.carsFrame.top * scale,
-                          width: CitirideLiveRouteMap.carsFrame.width * scale,
-                          height: CitirideLiveRouteMap.carsFrame.height * scale,
-                          child: const CompatibleSvgPicture.asset(
-                            'assets/images/Cars.svg',
-                            fit: BoxFit.fill,
-                            semanticsLabel: 'Map cars',
-                          ),
-                        ),
                       if (route != null)
                         Semantics(
                           label: routeSemanticsLabel,
@@ -591,45 +575,6 @@ Set<Marker> _realNearbyVehicleMarkers(
         anchor: const Offset(0.5, 0.5),
         flat: true,
         rotation: _vehicleRotation(drivers[i].heading),
-        zIndexInt: 2,
-      ),
-  };
-}
-
-Set<Marker> _nearbyVehicleMarkers(CitirideRoute? route, BitmapDescriptor icon) {
-  final center = route?.center ?? const LatLng(6.3350, 5.6037);
-  final bounds = route?.latLngBounds;
-  final latSpan = bounds == null
-      ? 0.018
-      : math.max(
-          0.012,
-          (bounds.northeast.latitude - bounds.southwest.latitude).abs(),
-        );
-  final lngSpan = bounds == null
-      ? 0.018
-      : math.max(
-          0.012,
-          (bounds.northeast.longitude - bounds.southwest.longitude).abs(),
-        );
-  final offsets = [
-    (lat: -0.34, lng: -0.28, heading: -26.0),
-    (lat: 0.22, lng: 0.30, heading: 42.0),
-    (lat: -0.04, lng: 0.47, heading: -38.0),
-    (lat: 0.38, lng: -0.36, heading: 136.0),
-  ];
-
-  return {
-    for (var i = 0; i < offsets.length; i += 1)
-      Marker(
-        markerId: MarkerId('citiride-nearby-vehicle-$i'),
-        position: LatLng(
-          center.latitude + offsets[i].lat * latSpan,
-          center.longitude + offsets[i].lng * lngSpan,
-        ),
-        icon: icon,
-        anchor: const Offset(0.5, 0.5),
-        flat: true,
-        rotation: _vehicleRotation(offsets[i].heading),
         zIndexInt: 2,
       ),
   };

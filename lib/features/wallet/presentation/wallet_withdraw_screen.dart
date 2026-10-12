@@ -32,7 +32,7 @@ class _WalletWithdrawScreenState extends State<WalletWithdrawScreen> {
   final _accountController = TextEditingController();
   final _amountController = TextEditingController();
   int? _selectedPreset;
-  bool _isSubmitting = false;
+  final bool _isSubmitting = false;
   bool _resolvingAccount = false;
   String? _resolvedAccountName;
   String? _resolveError;

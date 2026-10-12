@@ -73,7 +73,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(sharedParams?.text, contains('CitiRide trip'));
-    expect(sharedParams?.text, contains('Andrew Johnson'));
+    expect(sharedParams?.text, contains('Driver'));
     expect(sharedParams?.text, contains('Lagos Street'));
     expect(sharedParams?.text, contains('Ring Road Bus Terminal'));
     expect(sharedParams?.files?.length, 1);

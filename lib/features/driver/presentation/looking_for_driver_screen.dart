@@ -31,10 +31,6 @@ const _arrivingToRideArrivalDelay = Duration(seconds: 15);
 const _rideArrivalToDrivingDelay = Duration(seconds: 15);
 const _drivingToRideSuccessDelay = Duration(seconds: 10);
 
-const _previewDriverName = 'Andrew Johnson';
-const _previewDriverVehicle = 'Green Toyota Corolla Sedan';
-const _previewDriverPlate = 'BEN931AP';
-
 typedef ShareRideLauncher = Future<void> Function(ShareParams params);
 
 @visibleForTesting
@@ -652,9 +648,6 @@ class _DriverFoundScreenState extends State<DriverFoundScreen> {
   void _bindTripOrDemoTimer() {
     final rideId = widget.rideId?.trim();
     if (rideId == null || rideId.isEmpty || _isRunningWidgetTest) {
-      _driverName = _previewDriverName;
-      _driverVehicle = _previewDriverVehicle;
-      _driverPlate = _previewDriverPlate;
       _startArrivingTimer();
       return;
     }
@@ -1048,9 +1041,6 @@ class _ArrivingScreenState extends State<ArrivingScreen> {
   void _bindTripOrDemoTimer() {
     final rideId = widget.rideId?.trim();
     if (rideId == null || rideId.isEmpty || _isRunningWidgetTest) {
-      _driverName = _previewDriverName;
-      _driverVehicle = _previewDriverVehicle;
-      _driverPlate = _previewDriverPlate;
       _startRideArrivalTimer();
       return;
     }
@@ -1478,9 +1468,6 @@ class _RideArrivalScreenState extends State<RideArrivalScreen> {
   void _bindTripOrDemoTimer() {
     final rideId = widget.rideId?.trim();
     if (rideId == null || rideId.isEmpty || _isRunningWidgetTest) {
-      _driverName = _previewDriverName;
-      _driverVehicle = _previewDriverVehicle;
-      _driverPlate = _previewDriverPlate;
       if (widget.autoStartTrip) {
         _startDrivingTimer();
       }
@@ -1817,9 +1804,6 @@ class _DrivingToDestinationScreenState
   void _bindTripOrDemoTimer() {
     final rideId = widget.rideId?.trim();
     if (rideId == null || rideId.isEmpty || _isRunningWidgetTest) {
-      _driverName = _previewDriverName;
-      _driverVehicle = _previewDriverVehicle;
-      _driverPlate = _previewDriverPlate;
       if (widget.autoCompleteTrip) {
         _startRideSuccessTimer();
       }
@@ -2276,7 +2260,7 @@ class _DrivingToDestinationPanel extends StatelessWidget {
                     width: 56,
                     height: 62,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const CompatibleSvgPicture.asset(
+                    errorBuilder: (_, _, _) => const CompatibleSvgPicture.asset(
                       'assets/images/driver_img.svg',
                       width: 56,
                       height: 62,
@@ -2827,7 +2811,7 @@ class _ArrivingDriverInfo extends StatelessWidget {
               width: 56,
               height: 62,
               fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => const CompatibleSvgPicture.asset(
+              errorBuilder: (_, _, _) => const CompatibleSvgPicture.asset(
                 'assets/images/driver_img.svg',
                 width: 56,
                 height: 62,
@@ -3834,7 +3818,7 @@ class _ExpandedDriverInfo extends StatelessWidget {
               width: 56,
               height: 62,
               fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => const CompatibleSvgPicture.asset(
+              errorBuilder: (_, _, _) => const CompatibleSvgPicture.asset(
                 'assets/images/driver_img.svg',
                 width: 56,
                 height: 62,
@@ -3927,7 +3911,7 @@ Future<void> _showShareRideDetails(
   BuildContext context, {
   required String pickupLocation,
   required String destination,
-  String driverName = _previewDriverName,
+  String driverName = 'my driver',
   String? driverVehicle,
   String? driverPlate,
 }) async {
@@ -3935,8 +3919,8 @@ Future<void> _showShareRideDetails(
     pickupLocation: pickupLocation,
     destination: destination,
     driverName: driverName,
-    driverVehicle: driverVehicle ?? _previewDriverVehicle,
-    driverPlate: driverPlate ?? _previewDriverPlate,
+    driverVehicle: driverVehicle,
+    driverPlate: driverPlate,
   );
 
   final shouldShare = await showModalBottomSheet<bool>(
@@ -4411,7 +4395,7 @@ class _PickupNotesChatOverlayState extends State<_PickupNotesChatOverlay> {
                 width: 38,
                 height: 42,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const CompatibleSvgPicture.asset(
+                errorBuilder: (_, _, _) => const CompatibleSvgPicture.asset(
                   'assets/images/driver_img.svg',
                   width: 38,
                   height: 42,

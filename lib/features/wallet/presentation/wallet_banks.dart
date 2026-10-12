@@ -152,7 +152,7 @@ class WalletBankLogo extends StatelessWidget {
                 radius: radius,
               );
             },
-            errorBuilder: (_, __, ___) => _BankInitials(
+            errorBuilder: (_, _, _) => _BankInitials(
               name: bank.name,
               size: size,
               radius: radius,

@@ -38,54 +38,18 @@ class RideHistoryItem {
   }
 }
 
-const rideHistoryItems = [
-  RideHistoryItem(
-    id: 'upcoming-lagos-ring-road',
-    status: RideHistoryStatus.upcoming,
-    dateLine: 'Sun, 31 Aug 2025',
-    detailDate: '31 Aug 2025',
-    pickup: 'Lagos Street, Benin City',
-    destination: 'Ring Road Bus Terminal, Benin City',
-    amount: '\u20A61,500.00',
-    paymentMethod: 'Cash Payment',
-  ),
-  RideHistoryItem(
-    id: 'completed-lagos-ring-road-1',
-    status: RideHistoryStatus.completed,
-    dateLine: 'Sun, 31 Aug 2025',
-    detailDate: '31 Aug 2025',
-    pickup: 'Lagos Street, Benin City',
-    destination: 'Ring Road Bus Terminal, Benin City',
-    amount: '\u20A61,500.00',
-    paymentMethod: 'Cash Payment',
-  ),
-  RideHistoryItem(
-    id: 'cancelled-lagos-ring-road',
-    status: RideHistoryStatus.cancelled,
-    dateLine: 'Sun, 31 Aug 2025',
-    detailDate: '31 Aug 2025',
-    pickup: 'Lagos Street, Benin City',
-    destination: 'Ring Road Bus Terminal, Benin City',
-    amount: '\u20A61,500.00',
-    paymentMethod: 'Cash Payment',
-  ),
-  RideHistoryItem(
-    id: 'completed-lagos-ring-road-2',
-    status: RideHistoryStatus.completed,
-    dateLine: 'Sun, 31 Aug 2025',
-    detailDate: '31 Aug 2025',
-    pickup: 'Lagos Street, Benin City',
-    destination: 'Ring Road Bus Terminal, Benin City',
-    amount: '\u20A61,500.00',
-    paymentMethod: 'Cash Payment',
-  ),
-];
+const rideHistoryItems = <RideHistoryItem>[];
 
-RideHistoryItem rideHistoryItemById(String? id) {
-  return rideHistoryItems.firstWhere(
-    (ride) => ride.id == id,
-    orElse: () => rideHistoryItems.first,
-  );
+RideHistoryItem? rideHistoryItemById(String? id) {
+  if (id == null || id.isEmpty) {
+    return null;
+  }
+  for (final ride in rideHistoryItems) {
+    if (ride.id == id) {
+      return ride;
+    }
+  }
+  return null;
 }
 
 List<RideHistoryItem> get upcomingRideHistoryItems {

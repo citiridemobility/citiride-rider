@@ -8,7 +8,6 @@ import '../../../app/theme/app_colors.dart';
 import '../../../core/auth/citiride_otp_client.dart';
 import '../../auth/presentation/widgets/auth_number_pad.dart';
 import '../../profile/domain/rider_profile.dart';
-import 'wallet_enrollment_store.dart';
 import 'wallet_flow_widgets.dart';
 
 enum WalletPasscodeMode { setup, confirm, unlock }

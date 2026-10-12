@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../shared/widgets/cancel_ride_request_sheet.dart';
 import '../../../shared/widgets/citiride_bottom_nav.dart';
+import '../../../shared/widgets/citiride_empty_state.dart';
 import '../../../shared/widgets/compatible_svg_picture.dart';
 import '../domain/ride_history.dart';
 
@@ -62,6 +63,12 @@ class _RidesScreenState extends State<RidesScreen> {
     final rides = _tab == _RidesTab.upcoming
         ? upcomingRideHistoryItems
         : pastRideHistoryItems;
+    final emptyTitle = _tab == _RidesTab.upcoming
+        ? 'No upcoming rides'
+        : 'No past rides';
+    final emptySubtitle = _tab == _RidesTab.upcoming
+        ? 'When you book a trip, it will appear here until pickup.'
+        : 'Completed and cancelled trips will show up here.';
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
@@ -116,24 +123,30 @@ class _RidesScreenState extends State<RidesScreen> {
                       ),
                       const SizedBox(height: 16),
                       Expanded(
-                        child: ListView.separated(
-                          physics: const BouncingScrollPhysics(),
-                          padding: EdgeInsets.zero,
-                          itemCount: rides.length,
-                          separatorBuilder: (context, index) {
-                            return const SizedBox(height: 12);
-                          },
-                          itemBuilder: (context, index) {
-                            final ride = rides[index];
-                            return _RideHistoryCard(
-                              ride: ride,
-                              showCancel: _tab == _RidesTab.upcoming,
-                              showStatus: _tab == _RidesTab.past,
-                              onTap: () => _openRideDetails(ride),
-                              onCancel: () => _cancelRide(ride),
-                            );
-                          },
-                        ),
+                        child: rides.isEmpty
+                            ? CitirideEmptyState(
+                                icon: Icons.route_outlined,
+                                title: emptyTitle,
+                                subtitle: emptySubtitle,
+                              )
+                            : ListView.separated(
+                                physics: const BouncingScrollPhysics(),
+                                padding: EdgeInsets.zero,
+                                itemCount: rides.length,
+                                separatorBuilder: (context, index) {
+                                  return const SizedBox(height: 12);
+                                },
+                                itemBuilder: (context, index) {
+                                  final ride = rides[index];
+                                  return _RideHistoryCard(
+                                    ride: ride,
+                                    showCancel: _tab == _RidesTab.upcoming,
+                                    showStatus: _tab == _RidesTab.past,
+                                    onTap: () => _openRideDetails(ride),
+                                    onCancel: () => _cancelRide(ride),
+                                  );
+                                },
+                              ),
                       ),
                     ],
                   ),

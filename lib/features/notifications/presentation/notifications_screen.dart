@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_colors.dart';
+import '../../../shared/widgets/citiride_empty_state.dart';
 import '../../../shared/widgets/compatible_svg_picture.dart';
 
 class CitirideNotification {
@@ -19,28 +20,7 @@ class CitirideNotification {
   final String timeAgo;
 }
 
-const citirideNotifications = [
-  CitirideNotification(
-    title: 'Your ride just arrived',
-    location: 'Lagos Street, Benin City',
-    timeAgo: '3 minutes ago',
-  ),
-  CitirideNotification(
-    title: 'You cancelled your order',
-    location: 'Dawson Road, Benin City',
-    timeAgo: '2 days ago',
-  ),
-  CitirideNotification(
-    title: 'Ride successfully completed',
-    location: 'Oba Market Road, Benin City 300102',
-    timeAgo: '5 days ago',
-  ),
-  CitirideNotification(
-    title: 'Your ride just arrived',
-    location: '5 junction, Benin City',
-    timeAgo: '10 days ago',
-  ),
-];
+const citirideNotifications = <CitirideNotification>[];
 
 class NotificationsPeekOverlay extends StatelessWidget {
   const NotificationsPeekOverlay({
@@ -119,12 +99,22 @@ class NotificationsPeekOverlay extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  for (var index = 0; index < 3; index++) ...[
-                    _NotificationRow(
-                      notification: citirideNotifications[index],
-                    ),
-                    if (index < 2) const SizedBox(height: 21),
-                  ],
+                  if (citirideNotifications.isEmpty)
+                    const CitirideEmptyState(
+                      compact: true,
+                      icon: Icons.notifications_none_rounded,
+                      title: 'No notifications yet',
+                      subtitle:
+                          'Trip alerts and account updates will show up here.',
+                    )
+                  else
+                    for (var index = 0; index < 3 && index < citirideNotifications.length; index++) ...[
+                      _NotificationRow(
+                        notification: citirideNotifications[index],
+                      ),
+                      if (index < 2 && index < citirideNotifications.length - 1)
+                        const SizedBox(height: 21),
+                    ],
                   const SizedBox(height: 24),
                   TextButton(
                     key: const ValueKey('notifications-peek-view-all'),
@@ -214,17 +204,25 @@ class NotificationsViewAllScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 35),
                         Expanded(
-                          child: ListView.separated(
-                            padding: EdgeInsets.zero,
-                            itemCount: citirideNotifications.length,
-                            separatorBuilder: (_, _) =>
-                                const SizedBox(height: 24),
-                            itemBuilder: (context, index) {
-                              return _NotificationRow(
-                                notification: citirideNotifications[index],
-                              );
-                            },
-                          ),
+                          child: citirideNotifications.isEmpty
+                              ? const CitirideEmptyState(
+                                  icon: Icons.notifications_none_rounded,
+                                  title: 'No notifications yet',
+                                  subtitle:
+                                      'When a ride is booked, cancelled, or completed, you will see it here.',
+                                )
+                              : ListView.separated(
+                                  padding: EdgeInsets.zero,
+                                  itemCount: citirideNotifications.length,
+                                  separatorBuilder: (_, _) =>
+                                      const SizedBox(height: 24),
+                                  itemBuilder: (context, index) {
+                                    return _NotificationRow(
+                                      notification:
+                                          citirideNotifications[index],
+                                    );
+                                  },
+                                ),
                         ),
                       ],
                     ),

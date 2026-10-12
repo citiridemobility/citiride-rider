@@ -3,16 +3,65 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_colors.dart';
+import '../../../shared/widgets/citiride_empty_state.dart';
 import '../../../shared/widgets/compatible_svg_picture.dart';
 import '../domain/ride_history.dart';
 
 class RideDetailsScreen extends StatelessWidget {
-  const RideDetailsScreen({super.key, required this.ride});
+  const RideDetailsScreen({super.key, this.ride});
 
-  final RideHistoryItem ride;
+  final RideHistoryItem? ride;
 
   @override
   Widget build(BuildContext context) {
+    final selectedRide = ride;
+    if (selectedRide == null) {
+      return AnnotatedRegion<SystemUiOverlayStyle>(
+        value: const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.light,
+          statusBarBrightness: Brightness.dark,
+          systemNavigationBarColor: AppColors.citirideBlack,
+          systemNavigationBarIconBrightness: Brightness.light,
+          systemNavigationBarDividerColor: AppColors.citirideBlack,
+        ),
+        child: Scaffold(
+          backgroundColor: AppColors.citirideBlack,
+          body: SafeArea(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                IconButton(
+                  key: const ValueKey('ride-details-back-button'),
+                  onPressed: () {
+                    if (context.canPop()) {
+                      context.pop();
+                      return;
+                    }
+                    context.go('/rides?tab=past');
+                  },
+                  padding: EdgeInsets.zero,
+                  alignment: Alignment.centerLeft,
+                  icon: const Icon(
+                    Icons.arrow_back,
+                    color: AppColors.white,
+                    size: 24,
+                  ),
+                ),
+                const Expanded(
+                  child: CitirideEmptyState(
+                    icon: Icons.route_outlined,
+                    title: 'Ride not found',
+                    subtitle: 'This trip is no longer available.',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
@@ -68,7 +117,7 @@ class RideDetailsScreen extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          ride.detailTitle,
+                          selectedRide.detailTitle,
                           style: const TextStyle(
                             color: AppColors.white,
                             fontSize: 16,
@@ -79,7 +128,7 @@ class RideDetailsScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          ride.detailDate,
+                          selectedRide.detailDate,
                           style: const TextStyle(
                             color: Color(0xFFA0A0A0),
                             fontSize: 10,
@@ -95,9 +144,9 @@ class RideDetailsScreen extends StatelessWidget {
                 const SizedBox(height: 25),
                 const _RideDetailsMap(),
                 const SizedBox(height: 25),
-                _RouteTimeline(ride: ride),
+                _RouteTimeline(ride: selectedRide),
                 const SizedBox(height: 25),
-                _PaymentSummaryCard(ride: ride),
+                _PaymentSummaryCard(ride: selectedRide),
               ],
             ),
           ),

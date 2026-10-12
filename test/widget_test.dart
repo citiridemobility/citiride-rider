@@ -749,9 +749,9 @@ void main() {
       find.byKey(const ValueKey('driver-found-expanded-card')),
       findsOneWidget,
     );
-    expect(find.text('Andrew Johnson'), findsOneWidget);
-    expect(find.textContaining('Green', findRichText: true), findsOneWidget);
-    expect(find.text('BEN931AP'), findsOneWidget);
+    expect(find.text('Driver'), findsOneWidget);
+    expect(find.textContaining('Vehicle', findRichText: true), findsOneWidget);
+    expect(find.text('BEN931AP'), findsNothing);
     expect(find.text('Any pickup notes?'), findsOneWidget);
     expect(find.bySemanticsLabel('Call driver'), findsOneWidget);
     expect(find.text('Add stop'), findsOneWidget);
