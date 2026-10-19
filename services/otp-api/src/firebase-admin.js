@@ -1,5 +1,7 @@
 import admin from 'firebase-admin';
 
+export { admin };
+
 let initialized = false;
 let initError = null;
 

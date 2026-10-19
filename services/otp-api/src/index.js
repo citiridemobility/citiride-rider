@@ -21,6 +21,7 @@ import {
 } from './emails/templates.js';
 import { handleDriverPhotoUpload } from './driver-photo.js';
 import {
+  admin,
   createDriverCustomToken,
   createRiderCustomToken,
   driverAccountExists,
@@ -49,7 +50,13 @@ const demoCode = process.env.OTP_DEMO_CODE?.trim() || '968999';
 
 const resend = resendApiKey ? new Resend(resendApiKey) : null;
 
-/** @type {Map<string, { hash: string, salt: string, expiresAt: number, attempts: number, lastSentAt: number }>} */
+const OTP_SESSIONS = 'otp_sessions';
+
+/**
+ * Local-development fallback only. Production sessions are persisted in
+ * Firestore so send and verify requests can safely reach different replicas.
+ * @type {Map<string, { hash: string, salt: string, expiresAt: number, attempts: number, lastSentAt: number }>}
+ */
 const otpStore = new Map();
 
 /** Avoid spamming welcome mail on repeated logins in a short window. */
@@ -171,7 +178,7 @@ app.post('/v1/otp/send', async (req, res) => {
     }
 
     const key = storeKey(email, purpose);
-    const existing = otpStore.get(key);
+    const existing = await getOtpRecord(key);
     const now = Date.now();
 
     if (existing && now - existing.lastSentAt < resendCooldownMs) {
@@ -187,7 +194,7 @@ app.post('/v1/otp/send', async (req, res) => {
     const salt = crypto.randomBytes(16).toString('hex');
     const hash = hashOtp(code, salt);
 
-    otpStore.set(key, {
+    await saveOtpRecord(key, {
       hash,
       salt,
       expiresAt: now + otpTtlMs,
@@ -213,7 +220,7 @@ app.post('/v1/otp/send', async (req, res) => {
       });
 
       if (error) {
-        otpStore.delete(key);
+        await deleteOtpRecord(key);
         return res.status(502).json({
           error: 'send_failed',
           message: error.message || 'Unable to send verification email.',
@@ -259,42 +266,35 @@ app.post('/v1/otp/verify', async (req, res) => {
     }
 
     const key = storeKey(email, purpose);
-    const record = otpStore.get(key);
+    const verification = await verifyOtpRecord(key, code);
 
-    if (!record) {
+    if (verification.status === 'missing') {
       return res.status(400).json({
         error: 'invalid-verification-code',
         message: 'Incorrect code',
       });
     }
 
-    if (Date.now() > record.expiresAt) {
-      otpStore.delete(key);
+    if (verification.status === 'expired') {
       return res.status(400).json({
         error: 'session-expired',
         message: 'Verification session expired. Please request a new code.',
       });
     }
 
-    if (record.attempts >= maxAttempts) {
-      otpStore.delete(key);
+    if (verification.status === 'locked') {
       return res.status(429).json({
         error: 'too-many-attempts',
         message: 'Too many incorrect attempts. Please request a new code.',
       });
     }
 
-    const incomingHash = hashOtp(code, record.salt);
-    if (incomingHash !== record.hash) {
-      record.attempts += 1;
-      otpStore.set(key, record);
+    if (verification.status === 'invalid') {
       return res.status(400).json({
         error: 'invalid-verification-code',
         message: 'Incorrect code',
       });
     }
-
-    otpStore.delete(key);
 
     let welcomeEmail = 'skipped';
     if (purpose === 'signup' || purpose === 'login') {
@@ -346,7 +346,7 @@ app.post('/v1/driver/otp/send', async (req, res) => {
     }
 
     const key = storeKey(email, purpose);
-    const existing = otpStore.get(key);
+    const existing = await getOtpRecord(key);
     const now = Date.now();
 
     if (existing && now - existing.lastSentAt < resendCooldownMs) {
@@ -362,7 +362,7 @@ app.post('/v1/driver/otp/send', async (req, res) => {
     const salt = crypto.randomBytes(16).toString('hex');
     const hash = hashOtp(code, salt);
 
-    otpStore.set(key, {
+    await saveOtpRecord(key, {
       hash,
       salt,
       expiresAt: now + otpTtlMs,
@@ -388,7 +388,7 @@ app.post('/v1/driver/otp/send', async (req, res) => {
       });
 
       if (error) {
-        otpStore.delete(key);
+        await deleteOtpRecord(key);
         return res.status(502).json({
           error: 'send_failed',
           message: error.message || 'Unable to send verification email.',
@@ -436,42 +436,35 @@ app.post('/v1/driver/otp/verify', async (req, res) => {
     }
 
     const key = storeKey(email, purpose);
-    const record = otpStore.get(key);
+    const verification = await verifyOtpRecord(key, code);
 
-    if (!record) {
+    if (verification.status === 'missing') {
       return res.status(400).json({
         error: 'invalid-verification-code',
         message: 'Incorrect code',
       });
     }
 
-    if (Date.now() > record.expiresAt) {
-      otpStore.delete(key);
+    if (verification.status === 'expired') {
       return res.status(400).json({
         error: 'session-expired',
         message: 'Verification session expired. Please request a new code.',
       });
     }
 
-    if (record.attempts >= maxAttempts) {
-      otpStore.delete(key);
+    if (verification.status === 'locked') {
       return res.status(429).json({
         error: 'too-many-attempts',
         message: 'Too many incorrect attempts. Please request a new code.',
       });
     }
 
-    const incomingHash = hashOtp(code, record.salt);
-    if (incomingHash !== record.hash) {
-      record.attempts += 1;
-      otpStore.set(key, record);
+    if (verification.status === 'invalid') {
       return res.status(400).json({
         error: 'invalid-verification-code',
         message: 'Incorrect code',
       });
     }
-
-    otpStore.delete(key);
 
     let firebaseCustomToken = null;
     let driverId = null;
@@ -747,6 +740,95 @@ function storeKey(email, purpose) {
         ? 'driver_login'
         : purpose;
   return `${bucket}:${email}`;
+}
+
+function otpSessionId(key) {
+  // Do not expose an email address in the Firestore document ID.
+  return crypto.createHash('sha256').update(key).digest('hex');
+}
+
+function otpSessionRef(key) {
+  if (!hasFirebaseAdmin()) return null;
+  return admin.firestore().collection(OTP_SESSIONS).doc(otpSessionId(key));
+}
+
+async function getOtpRecord(key) {
+  const ref = otpSessionRef(key);
+  if (!ref) return otpStore.get(key) || null;
+
+  const snap = await ref.get();
+  return snap.exists ? snap.data() : null;
+}
+
+async function saveOtpRecord(key, record) {
+  const ref = otpSessionRef(key);
+  if (!ref) {
+    otpStore.set(key, record);
+    return;
+  }
+
+  await ref.set({
+    hash: record.hash,
+    salt: record.salt,
+    expiresAt: Number(record.expiresAt),
+    attempts: Number(record.attempts || 0),
+    lastSentAt: Number(record.lastSentAt),
+    updatedAt: new Date(),
+  });
+}
+
+async function deleteOtpRecord(key) {
+  const ref = otpSessionRef(key);
+  if (!ref) {
+    otpStore.delete(key);
+    return;
+  }
+  await ref.delete();
+}
+
+function inspectOtpRecord(record, code) {
+  if (!record) return 'missing';
+  if (Date.now() > Number(record.expiresAt || 0)) return 'expired';
+  if (Number(record.attempts || 0) >= maxAttempts) return 'locked';
+  return hashOtp(code, String(record.salt || '')) === String(record.hash || '')
+    ? 'verified'
+    : 'invalid';
+}
+
+/**
+ * Atomically verify and consume an OTP. Firestore prevents two replicas from
+ * accepting the same code or losing the wrong-attempt count.
+ */
+async function verifyOtpRecord(key, code) {
+  const ref = otpSessionRef(key);
+  if (!ref) {
+    const record = otpStore.get(key);
+    const status = inspectOtpRecord(record, code);
+    if (status === 'verified' || status === 'expired' || status === 'locked') {
+      otpStore.delete(key);
+    } else if (status === 'invalid' && record) {
+      record.attempts = Number(record.attempts || 0) + 1;
+      otpStore.set(key, record);
+    }
+    return { status };
+  }
+
+  return admin.firestore().runTransaction(async (transaction) => {
+    const snap = await transaction.get(ref);
+    const record = snap.exists ? snap.data() : null;
+    const status = inspectOtpRecord(record, code);
+
+    if (status === 'verified' || status === 'expired' || status === 'locked') {
+      transaction.delete(ref);
+    } else if (status === 'invalid' && record) {
+      transaction.update(ref, {
+        attempts: Number(record.attempts || 0) + 1,
+        updatedAt: new Date(),
+      });
+    }
+
+    return { status };
+  });
 }
 
 function generateOtp() {

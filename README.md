@@ -64,6 +64,28 @@ This project is configured for:
 The startup code in `lib/main.dart` initializes Firebase with
 `DefaultFirebaseOptions.currentPlatform`.
 
+## Build a signed iOS IPA with GitHub Actions
+
+The `Build iOS IPA` workflow runs on a macOS GitHub runner when you push a tag
+named `rider-v*` or start it manually from the Actions tab. It uploads the
+signed `.ipa` as a workflow artifact; use Transporter or Xcode Organizer to
+submit that artifact to TestFlight.
+
+Before its first run, add these repository secrets in GitHub under **Settings,
+then Secrets and variables, then Actions**:
+
+| Secret | Value |
+| --- | --- |
+| `APPLE_CERTIFICATE_BASE64` | Base64-encoded Apple Distribution `.p12` certificate |
+| `APPLE_CERTIFICATE_PASSWORD` | Password used when exporting that `.p12` file |
+| `APPLE_PROVISIONING_PROFILE_BASE64` | Base64-encoded App Store provisioning profile for `com.citiride.citiride` |
+| `APPLE_TEAM_ID` | Ten-character Apple Developer Team ID |
+| `KEYCHAIN_PASSWORD` | A new random password used only by the ephemeral GitHub runner keychain |
+
+The certificate and provisioning profile must belong to the same Apple team
+and be valid for `com.citiride.citiride`. Never commit either file or their
+decoded contents to the repository.
+
 ## Next inputs needed
 
 - Screen mockups

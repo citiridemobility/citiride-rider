@@ -1,0 +1,145 @@
+name: Build iOS IPA
+
+on:
+  push:
+    tags:
+      - 'rider-v*'
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: 'Optional Apple build number. Leave blank to use the GitHub run number.'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-ipa-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build signed iOS IPA
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+      REQUESTED_BUILD_NUMBER: ${{ inputs.build_number }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Validate required signing secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          for secret in \
+            APPLE_CERTIFICATE_BASE64 \
+            APPLE_CERTIFICATE_PASSWORD \
+            APPLE_PROVISIONING_PROFILE_BASE64 \
+            APPLE_TEAM_ID \
+            KEYCHAIN_PASSWORD; do
+            if [[ -z "${!secret}" ]]; then
+              echo "Missing required GitHub Actions secret: ${secret}" >&2
+              exit 1
+            fi
+          done
+
+      - name: Set build number
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${REQUESTED_BUILD_NUMBER}" ]]; then
+            build_number="${REQUESTED_BUILD_NUMBER}"
+          else
+            build_number="${GITHUB_RUN_NUMBER}${GITHUB_RUN_ATTEMPT}"
+          fi
+          [[ "${build_number}" =~ ^[0-9]+$ ]] || {
+            echo 'The build number must contain digits only.' >&2
+            exit 1
+          }
+          echo "build_number=${build_number}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Apple signing assets
+        id: signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          certificate_path="${RUNNER_TEMP}/distribution.p12"
+          profile_path="${RUNNER_TEMP}/distribution.mobileprovision"
+          profile_plist="${RUNNER_TEMP}/distribution-profile.plist"
+          keychain_path="${RUNNER_TEMP}/app-signing.keychain-db"
+
+          printf '%s' "$APPLE_CERTIFICATE_BASE64" | base64 -D > "$certificate_path"
+          printf '%s' "$APPLE_PROVISIONING_PROFILE_BASE64" | base64 -D > "$profile_path"
+          security cms -D -i "$profile_path" > "$profile_plist"
+
+          profile_name=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$profile_plist")
+          profile_uuid=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$profile_plist")
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$profile_path" "$HOME/Library/MobileDevice/Provisioning Profiles/${profile_uuid}.mobileprovision"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security import "$certificate_path" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security list-keychain -d user -s "$keychain_path" login.keychain-db
+
+          echo "profile_name=${profile_name}" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch Flutter packages
+        run: flutter pub get
+
+      - name: Configure iOS dependencies
+        run: flutter build ios --release --config-only --build-number=${{ steps.version.outputs.build_number }}
+
+      - name: Create signed archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild archive \
+            -workspace ios/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath "$PWD/build/ios/archive/Runner.xcarchive" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY='Apple Distribution' \
+            PROVISIONING_PROFILE_SPECIFIER='${{ steps.signing.outputs.profile_name }}'
+
+      - name: Export IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          export_options="${RUNNER_TEMP}/ExportOptions.plist"
+          sed \
+            -e "s/__APPLE_TEAM_ID__/${APPLE_TEAM_ID}/g" \
+            -e "s/__PROFILE_NAME__/${{ steps.signing.outputs.profile_name }}/g" \
+            .github/ios/ExportOptions.plist > "$export_options"
+          xcodebuild -exportArchive \
+            -archivePath "$PWD/build/ios/archive/Runner.xcarchive" \
+            -exportPath "$PWD/build/ios/ipa" \
+            -exportOptionsPlist "$export_options"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: citiride-rider-ios-ipa-${{ steps.version.outputs.build_number }}
+          path: build/ios/ipa/*.ipa
+          if-no-files-found: error
+          retention-days: 14

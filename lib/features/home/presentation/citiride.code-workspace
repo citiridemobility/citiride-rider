@@ -5,6 +5,9 @@
 		},
 		{
 			"path": "../../../../../CitiRide-Driver"
+		},
+		{
+			"path": "../../../../../citiride-admin"
 		}
 	],
 	"settings": {}
