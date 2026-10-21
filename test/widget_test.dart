@@ -168,7 +168,7 @@ void main() {
   ) async {
     await pumpToEnterNumber(tester);
 
-    expect(continueButton(tester).onPressed, isNull);
+    expect(continueButton(tester).onPressed, null);
 
     await tester.pumpWidget(const SizedBox.shrink());
   });
@@ -185,7 +185,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('Invalid email address'), findsOneWidget);
-    expect(continueButton(tester).onPressed, isNull);
+    expect(continueButton(tester).onPressed, null);
 
     await tester.pumpWidget(const SizedBox.shrink());
   });
@@ -202,7 +202,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('Invalid email address'), findsNothing);
-    expect(continueButton(tester).onPressed, isNotNull);
+    expect(continueButton(tester).onPressed != null, true);
 
     await tester.pumpWidget(const SizedBox.shrink());
   });
@@ -238,7 +238,7 @@ void main() {
     await pumpToEnterCode(tester);
 
     expect(find.text('Resend code in 40'), findsOneWidget);
-    expect(continueButton(tester).onPressed, isNull);
+    expect(continueButton(tester).onPressed, null);
 
     await tester.pumpWidget(const SizedBox.shrink());
   });
@@ -263,13 +263,13 @@ void main() {
     await pumpToEnterCode(tester);
 
     await tapDialDigits(tester, '968990');
-    expect(continueButton(tester).onPressed, isNotNull);
+    expect(continueButton(tester).onPressed != null, true);
 
     await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
     await tester.pump();
 
     expect(find.text('Incorrect code'), findsOneWidget);
-    expect(continueButton(tester).onPressed, isNull);
+    expect(continueButton(tester).onPressed, null);
 
     await tester.pumpWidget(const SizedBox.shrink());
   });
@@ -459,7 +459,7 @@ void main() {
             find.byKey(const ValueKey('profile-save-button')),
           )
           .onPressed,
-      isNull,
+      null,
     );
 
     await tester.enterText(
@@ -478,11 +478,12 @@ void main() {
 
     expect(
       tester
-          .widget<FilledButton>(
-            find.byKey(const ValueKey('profile-save-button')),
-          )
-          .onPressed,
-      isNotNull,
+              .widget<FilledButton>(
+                find.byKey(const ValueKey('profile-save-button')),
+              )
+              .onPressed !=
+          null,
+      true,
     );
 
     await tester.tap(find.byKey(const ValueKey('profile-save-button')));
@@ -600,7 +601,7 @@ void main() {
             find.widgetWithText(FilledButton, 'Request a ride'),
           )
           .onPressed,
-      isNull,
+      null,
     );
 
     await tester.tap(find.bySemanticsLabel('Add stop'));
@@ -629,11 +630,12 @@ void main() {
     expect(find.text('Airport Road'), findsWidgets);
     expect(
       tester
-          .widget<FilledButton>(
-            find.widgetWithText(FilledButton, 'Request a ride'),
-          )
-          .onPressed,
-      isNotNull,
+              .widget<FilledButton>(
+                find.widgetWithText(FilledButton, 'Request a ride'),
+              )
+              .onPressed !=
+          null,
+      true,
     );
 
     await tester.tap(find.bySemanticsLabel('Switch route'));

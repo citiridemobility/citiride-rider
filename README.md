@@ -49,9 +49,9 @@ Run Android with:
 flutter run -d <android_device_id> --dart-define=GOOGLE_MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY
 ```
 
-For iOS, copy `ios/Flutter/GoogleMapsSecrets.example.xcconfig` to `ios/Flutter/GoogleMapsSecrets.xcconfig`, set `GOOGLE_MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY`, then also run with the same `--dart-define` so Places autocomplete works in Dart.
+For iOS, copy `ios/Flutter/GoogleMapsSecrets.example.xcconfig` to `ios/Flutter/GoogleMapsSecrets.xcconfig` and set `GOOGLE_MAPS_API_KEY`. The app exposes that key to Flutter at runtime, so Google Maps, Places, and Routes all use the same configured key.
 
-Without the dart define, the app keeps using the SVG mock map fallback and offline Nigerian place suggestions.
+Without a configured Google Maps key, the app keeps using the SVG map fallback and offline Nigerian place suggestions.
 
 ## Firebase
 

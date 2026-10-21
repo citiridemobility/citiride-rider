@@ -72,10 +72,13 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('share-ride-button')));
     await tester.pumpAndSettle();
 
-    expect(sharedParams?.text, contains('CitiRide trip'));
-    expect(sharedParams?.text, contains('Driver'));
-    expect(sharedParams?.text, contains('Lagos Street'));
-    expect(sharedParams?.text, contains('Ring Road Bus Terminal'));
+    expect(sharedParams?.text?.contains('CitiRide trip') ?? false, true);
+    expect(sharedParams?.text?.contains('Driver') ?? false, true);
+    expect(sharedParams?.text?.contains('Lagos Street') ?? false, true);
+    expect(
+      sharedParams?.text?.contains('Ring Road Bus Terminal') ?? false,
+      true,
+    );
     expect(sharedParams?.files?.length, 1);
     expect(sharedParams?.fileNameOverrides, ['citiride-ride-details.svg']);
   });
@@ -108,9 +111,12 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('share-ride-button')));
     await tester.pumpAndSettle();
 
-    expect(sharedParams?.text, contains('CitiRide trip'));
-    expect(sharedParams?.text, contains('Lagos Street'));
-    expect(sharedParams?.text, contains('Ring Road Bus Terminal'));
+    expect(sharedParams?.text?.contains('CitiRide trip') ?? false, true);
+    expect(sharedParams?.text?.contains('Lagos Street') ?? false, true);
+    expect(
+      sharedParams?.text?.contains('Ring Road Bus Terminal') ?? false,
+      true,
+    );
     expect(sharedParams?.files?.length, 1);
     expect(sharedParams?.fileNameOverrides, ['citiride-ride-details.svg']);
   });

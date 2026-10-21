@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_colors.dart';
+import '../../../core/auth/citiride_auth_service.dart';
 import '../../../core/firebase/firebase_bootstrap.dart';
 import '../../../core/session/citiride_session_store.dart';
 import '../../../shared/widgets/compatible_svg_picture.dart';
@@ -35,10 +36,6 @@ class _SplashScreenState extends State<SplashScreen> {
     // is ready when the first real screen opens.
     await Future.wait<void>([
       Future<void>.delayed(_minimumSplashDuration),
-      RiderProfileStore.instance.load().timeout(
-        const Duration(seconds: 2),
-        onTimeout: () {},
-      ),
       WalletEnrollmentStore.instance.load().timeout(
         const Duration(seconds: 2),
         onTimeout: () {},
@@ -55,21 +52,35 @@ class _SplashScreenState extends State<SplashScreen> {
 
     try {
       const sessionStore = CitirideSessionStore();
-      final hasCompletedAuth = await sessionStore
-          .hasCompletedAuth()
-          .timeout(const Duration(seconds: 2), onTimeout: () => false);
+      final hasCompletedAuth = await sessionStore.hasCompletedAuth().timeout(
+        const Duration(seconds: 2),
+        onTimeout: () => false,
+      );
       if (!mounted) {
         return;
       }
 
       if (hasCompletedAuth) {
+        final email = await sessionStore.signedInEmail();
+        if (email != null) {
+          await RiderProfileStore.instance
+              .restoreForAccount(
+                email: email,
+                uid: CitirideAuthService().currentUid,
+              )
+              .timeout(const Duration(seconds: 5), onTimeout: () {});
+        }
+        if (!mounted) {
+          return;
+        }
         context.go('/home');
         return;
       }
 
-      final hasSeenOnboarding = await sessionStore
-          .hasSeenOnboarding()
-          .timeout(const Duration(seconds: 2), onTimeout: () => false);
+      final hasSeenOnboarding = await sessionStore.hasSeenOnboarding().timeout(
+        const Duration(seconds: 2),
+        onTimeout: () => false,
+      );
       if (!mounted) {
         return;
       }
@@ -104,10 +115,8 @@ class _SplashScreenState extends State<SplashScreen> {
               height: 168,
               fit: BoxFit.contain,
               semanticsLabel: 'CitiRide',
-              placeholderBuilder: (_) => const SizedBox(
-                width: 168,
-                height: 168,
-              ),
+              placeholderBuilder: (_) =>
+                  const SizedBox(width: 168, height: 168),
               errorBuilder: (context, error, stackTrace) => const Text(
                 'CitiRide',
                 style: TextStyle(

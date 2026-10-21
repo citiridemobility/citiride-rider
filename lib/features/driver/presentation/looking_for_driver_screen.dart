@@ -163,6 +163,9 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
     }
     if (widget.initialPickupLatLng != oldWidget.initialPickupLatLng) {
       _pickupLatLng = widget.initialPickupLatLng;
+      if (!_isRunningWidgetTest) {
+        _startNearbyDriversWatch();
+      }
     }
     if (widget.initialDestinationLatLng != oldWidget.initialDestinationLatLng) {
       _destinationLatLng = widget.initialDestinationLatLng;
@@ -178,7 +181,17 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
   }
 
   void _startNearbyDriversWatch() {
-    _nearbyDriversSub = _rideRepository.watchNearbyDrivers().listen(
+    final pickup = _pickupLatLng;
+    unawaited(_nearbyDriversSub?.cancel() ?? Future<void>.value());
+    _nearbyDriversSub = null;
+    if (pickup == null) {
+      setState(() {
+        _nearbyDrivers = const [];
+      });
+      return;
+    }
+
+    _nearbyDriversSub = _rideRepository.watchNearbyDrivers(center: pickup).listen(
       (drivers) {
         if (!mounted) return;
         setState(() {
@@ -435,6 +448,7 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
       _pickupLocation = selectedLocation.displayText;
       _pickupLatLng = selectedLocation.location ?? _pickupLatLng;
     });
+    _startNearbyDriversWatch();
   }
 
   Future<void> _cancelOpenRequest() async {
@@ -895,9 +909,9 @@ class _DriverFoundScreenState extends State<DriverFoundScreen> {
                     vehicleProgress: _driverLatLng == null ? 0.08 : null,
                     driverLatLng: _driverLatLng,
                     driverHeading: _driverHeading,
-                    vehicleAsset: 'assets/images/Car img - select ride.svg',
-                    vehicleWidth: 58,
-                    vehicleHeight: 34,
+                    vehicleAsset: 'assets/images/car.png',
+                    vehicleWidth: 44,
+                    vehicleHeight: 54,
                   ),
                 ),
                 Positioned(
@@ -1313,9 +1327,9 @@ class _ArrivingScreenState extends State<ArrivingScreen> {
                     vehicleProgress: _driverLatLng == null ? 0.18 : null,
                     driverLatLng: _driverLatLng,
                     driverHeading: _driverHeading,
-                    vehicleAsset: 'assets/images/Car img - select ride.svg',
-                    vehicleWidth: 58,
-                    vehicleHeight: 34,
+                    vehicleAsset: 'assets/images/car.png',
+                    vehicleWidth: 44,
+                    vehicleHeight: 54,
                     routeDriverToPickup: true,
                     onRouteDuration: (duration) {
                       if (!mounted) return;
@@ -1675,9 +1689,9 @@ class _RideArrivalScreenState extends State<RideArrivalScreen> {
                     vehicleProgress: _driverLatLng == null ? 0.02 : null,
                     driverLatLng: _driverLatLng,
                     driverHeading: _driverHeading,
-                    vehicleAsset: 'assets/images/Car img - select ride.svg',
-                    vehicleWidth: 58,
-                    vehicleHeight: 34,
+                    vehicleAsset: 'assets/images/car.png',
+                    vehicleWidth: 44,
+                    vehicleHeight: 54,
                   ),
                 ),
                 Positioned(
@@ -1977,9 +1991,9 @@ class _DrivingToDestinationScreenState
                     vehicleProgress: _driverLatLng == null ? 0.46 : null,
                     driverLatLng: _driverLatLng,
                     driverHeading: _driverHeading,
-                    vehicleAsset: 'assets/images/Car img - select ride.svg',
-                    vehicleWidth: 58,
-                    vehicleHeight: 34,
+                    vehicleAsset: 'assets/images/car.png',
+                    vehicleWidth: 44,
+                    vehicleHeight: 54,
                   ),
                 ),
                 Positioned(
@@ -2956,9 +2970,9 @@ class _DriverFlowMap extends StatefulWidget {
     this.vehicleProgress,
     this.driverLatLng,
     this.driverHeading,
-    this.vehicleAsset = 'assets/images/Car img - select ride.svg',
-    this.vehicleWidth = 58,
-    this.vehicleHeight = 34,
+    this.vehicleAsset = 'assets/images/car.png',
+    this.vehicleWidth = 44,
+    this.vehicleHeight = 54,
     this.nearbyDrivers = const [],
     /// When true and [driverLatLng] is set, draw driver→pickup (on-the-way).
     this.routeDriverToPickup = false,

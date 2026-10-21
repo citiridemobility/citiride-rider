@@ -19,5 +19,19 @@ import UIKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+
+    let mapsConfigChannel = FlutterMethodChannel(
+      name: "citiride/google_maps_config",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    )
+    mapsConfigChannel.setMethodCallHandler { call, result in
+      guard call.method == "apiKey" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+
+      let apiKey = Bundle.main.object(forInfoDictionaryKey: "GoogleMapsApiKey") as? String
+      result(apiKey)
+    }
   }
 }

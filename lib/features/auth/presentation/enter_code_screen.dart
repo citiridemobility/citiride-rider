@@ -13,11 +13,7 @@ import '../../profile/domain/rider_profile.dart';
 import 'widgets/auth_number_pad.dart';
 
 class EnterCodeScreen extends StatefulWidget {
-  const EnterCodeScreen({
-    super.key,
-    this.email,
-    this.intent = 'signup',
-  });
+  const EnterCodeScreen({super.key, this.email, this.intent = 'signup'});
 
   final String? email;
   final String intent;
@@ -123,8 +119,9 @@ class _EnterCodeScreenState extends State<EnterCodeScreen> {
 
     _showLoadingDialog();
 
+    late final CitirideAuthResult authResult;
     try {
-      await _confirmEnteredCode().timeout(
+      authResult = await _confirmEnteredCode().timeout(
         _verificationTimeout,
         onTimeout: () => throw const CitirideAuthException(
           'Verification is taking too long. Please try again.',
@@ -157,16 +154,15 @@ class _EnterCodeScreenState extends State<EnterCodeScreen> {
       return;
     }
 
-    await _sessionStore
-        .markAuthenticated(email: _emailAddress)
-        .timeout(
-          const Duration(seconds: 2),
-          onTimeout: () {},
-        );
-
-    final profile = RiderProfileStore.instance.profile.value;
+    final authenticatedEmail = (authResult.email ?? _emailAddress)
+        .trim()
+        .toLowerCase();
     await RiderProfileStore.instance
-        .update(profile.copyWith(email: _emailAddress))
+        .restoreForAccount(email: authenticatedEmail, uid: authResult.uid)
+        .timeout(const Duration(seconds: 5), onTimeout: () {});
+
+    await _sessionStore
+        .markAuthenticated(email: authenticatedEmail)
         .timeout(const Duration(seconds: 2), onTimeout: () {});
 
     setState(() {
@@ -176,7 +172,9 @@ class _EnterCodeScreenState extends State<EnterCodeScreen> {
     if (widget.intent == 'login') {
       _dismissLoadingDialog();
       if (mounted) {
-        context.go('/set-location');
+        // Returning riders have already completed first-run setup. A login
+        // should restore their session and take them straight to the app.
+        context.go('/home');
       }
       return;
     }
@@ -192,7 +190,7 @@ class _EnterCodeScreenState extends State<EnterCodeScreen> {
     });
   }
 
-  Future<void> _confirmEnteredCode() {
+  Future<CitirideAuthResult> _confirmEnteredCode() {
     return _authService.confirmEmailCode(
       code: _code,
       email: _emailAddress,
@@ -335,7 +333,6 @@ class _EnterCodeScreenState extends State<EnterCodeScreen> {
     return provided.toLowerCase();
   }
 
-
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -458,10 +455,7 @@ class _EnterCodeScreenState extends State<EnterCodeScreen> {
 }
 
 class _EnterCodeHeader extends StatelessWidget {
-  const _EnterCodeHeader({
-    required this.target,
-    required this.onBack,
-  });
+  const _EnterCodeHeader({required this.target, required this.onBack});
 
   final String target;
   final VoidCallback onBack;

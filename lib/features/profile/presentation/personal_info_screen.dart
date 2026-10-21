@@ -24,12 +24,28 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
   final _imagePicker = ImagePicker();
 
   Uint8List? _selectedPhotoBytes;
+  bool _photoChanged = false;
   bool _loadingDialogVisible = false;
 
   bool get _canSave {
-    return _nameController.text.trim().isNotEmpty &&
+    final hasRequiredFields =
+        _nameController.text.trim().isNotEmpty &&
         _userNameController.text.trim().isNotEmpty &&
         _phoneController.text.trim().length == 10;
+    if (!hasRequiredFields) {
+      return false;
+    }
+
+    final currentProfile = RiderProfileStore.instance.profile.value;
+    return !currentProfile.hasCompletedPersonalInfo || _hasChanges;
+  }
+
+  bool get _hasChanges {
+    final profile = RiderProfileStore.instance.profile.value;
+    return _nameController.text.trim() != profile.fullName ||
+        _cleanUserName(_userNameController.text) != profile.userName ||
+        _formatPhoneNumber(_phoneController.text) != profile.phoneNumber ||
+        _photoChanged;
   }
 
   @override
@@ -83,6 +99,7 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
 
       setState(() {
         _selectedPhotoBytes = bytes;
+        _photoChanged = true;
       });
     } on PlatformException catch (error) {
       if (!mounted) {

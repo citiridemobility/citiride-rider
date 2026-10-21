@@ -5,8 +5,6 @@ import '../../app/theme/app_colors.dart';
 import '../../core/auth/citiride_auth_service.dart';
 import '../../core/session/citiride_session_store.dart';
 import '../../features/profile/domain/rider_profile.dart';
-import '../../features/wallet/presentation/wallet_enrollment_store.dart';
-import '../../features/wallet/presentation/wallet_transaction_pin_store.dart';
 
 Future<void> showCitirideLogoutDialog(BuildContext context) {
   var loggingOut = false;
@@ -43,11 +41,12 @@ Future<void> showCitirideLogoutDialog(BuildContext context) {
                 Navigator.of(dialogContext, rootNavigator: true).pop();
                 try {
                   await CitirideAuthService().signOut();
+                  // Wallet enrollment and the transaction PIN are encrypted
+                  // device credentials. They must survive logout so this
+                  // rider is asked to unlock, rather than enroll, next time.
                   await Future.wait<void>([
                     const CitirideSessionStore().clearAuth(),
                     RiderProfileStore.instance.clear(),
-                    WalletEnrollmentStore.instance.clear(),
-                    WalletTransactionPinStore.instance.clear(),
                   ]);
                 } finally {
                   router.go('/welcome');

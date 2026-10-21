@@ -30,9 +30,9 @@ class CitirideLiveRouteMap extends StatefulWidget {
     this.vehicleProgress,
     this.vehiclePosition,
     this.vehicleHeading,
-    this.vehicleMarkerAsset = 'assets/images/Car img - select ride.svg',
-    this.vehicleMarkerWidth = 58,
-    this.vehicleMarkerHeight = 34,
+    this.vehicleMarkerAsset = 'assets/images/car.png',
+    this.vehicleMarkerWidth = 44,
+    this.vehicleMarkerHeight = 54,
     this.cameraBoundsPadding = 104,
     this.fitRouteInView = true,
     this.cameraFocus,
@@ -54,8 +54,10 @@ class CitirideLiveRouteMap extends StatefulWidget {
   final String Function(CitirideRoute route)? pickupLabelBuilder;
   final String Function(CitirideRoute route)? destinationLabelBuilder;
   final double? vehicleProgress;
+
   /// Real nearby driver positions from Firestore.
   final List<NearbyDriver> nearbyDrivers;
+
   /// Absolute GPS for the assigned driver (preferred over [vehicleProgress]).
   final LatLng? vehiclePosition;
   final double? vehicleHeading;
@@ -63,6 +65,7 @@ class CitirideLiveRouteMap extends StatefulWidget {
   final double vehicleMarkerWidth;
   final double vehicleMarkerHeight;
   final double cameraBoundsPadding;
+
   /// When false, route updates do not re-fit/recenter the camera (used while
   /// the rider is manually positioning pickup under the center pin).
   final bool fitRouteInView;
@@ -230,11 +233,13 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
                     : '',
               ),
               fallbackSemanticsLabel: widget.fallbackSemanticsLabel,
-              cameraTarget: widget.vehiclePosition ??
+              cameraTarget:
+                  widget.vehiclePosition ??
                   widget.cameraFocus ??
                   (widget.fitRouteInView ? route?.center : route?.routeStart),
               cameraZoom: widget.cameraZoom,
-              cameraBounds: widget.fitRouteInView &&
+              cameraBounds:
+                  widget.fitRouteInView &&
                       widget.vehiclePosition == null &&
                       widget.cameraFocus == null
                   ? route?.latLngBounds
@@ -256,7 +261,8 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
                 if (route != null && icons != null) ...{
                   // Prefer Flutter overlay (label + pin). Native pin only while
                   // screen projection is still resolving.
-                  if (widget.showDestinationMarker && _destinationScreen == null)
+                  if (widget.showDestinationMarker &&
+                      _destinationScreen == null)
                     Marker(
                       markerId: const MarkerId(
                         'citiride-route-destination-pin',
@@ -397,10 +403,7 @@ class _RoutePointOverlay extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: AppColors.white,
                   shape: BoxShape.circle,
-                  border: Border.all(
-                    color: AppColors.citirideYellow,
-                    width: 3,
-                  ),
+                  border: Border.all(color: AppColors.citirideYellow, width: 3),
                 ),
               ),
             ),
@@ -627,7 +630,9 @@ List<_RoutePolylinePoint> _directionArrowPoints(List<LatLng> points) {
   final arrows = <_RoutePolylinePoint>[];
   var next = startAt;
   while (next < endAt && arrows.length < 12) {
-    arrows.add(_pointAlongPolyline(points, (next / totalDistance).clamp(0.0, 1.0)));
+    arrows.add(
+      _pointAlongPolyline(points, (next / totalDistance).clamp(0.0, 1.0)),
+    );
     next += spacing;
   }
   return arrows;
@@ -1017,6 +1022,17 @@ class _RouteMarkerIcons {
     double height,
   ) async {
     try {
+      if (assetName.toLowerCase().endsWith('.png')) {
+        // The supplied vehicle bitmap is already a north-facing, transparent
+        // marker. Keep it unmodified so a GPS heading of 0 points up.
+        return await BitmapDescriptor.asset(
+          ImageConfiguration(size: Size(width, height)),
+          assetName,
+          width: width,
+          height: height,
+        );
+      }
+
       final rawSvg = await rootBundle.loadString(assetName);
       final normalizedSvg = CompatibleSvgPicture.normalizeSvgForRuntime(rawSvg);
       final pictureInfo = await vg.loadPicture(

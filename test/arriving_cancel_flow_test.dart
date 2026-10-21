@@ -94,7 +94,7 @@ void main() {
             find.byKey(const ValueKey('cancel-reason-submit-button')),
           )
           .onPressed,
-      isNull,
+      null,
     );
 
     await tester.tap(find.text('Car not moving towards me'));
@@ -102,11 +102,12 @@ void main() {
 
     expect(
       tester
-          .widget<FilledButton>(
-            find.byKey(const ValueKey('cancel-reason-submit-button')),
-          )
-          .onPressed,
-      isNotNull,
+              .widget<FilledButton>(
+                find.byKey(const ValueKey('cancel-reason-submit-button')),
+              )
+              .onPressed !=
+          null,
+      true,
     );
 
     await tester.tap(find.byKey(const ValueKey('cancel-reason-submit-button')));

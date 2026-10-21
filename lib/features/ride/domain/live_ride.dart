@@ -166,6 +166,12 @@ class LiveRide {
     this.paymentStatus = 'unpaid',
     this.paidAt,
     this.createdAt,
+    this.acceptedAt,
+    this.driverArrivedAt,
+    this.tripStartedAt,
+    this.tripEndedAt,
+    this.completedAt,
+    this.cancelledAt,
     this.updatedAt,
     this.lastDeclinedAt,
   });
@@ -187,6 +193,12 @@ class LiveRide {
   final String paymentStatus;
   final Timestamp? paidAt;
   final Timestamp? createdAt;
+  final Timestamp? acceptedAt;
+  final Timestamp? driverArrivedAt;
+  final Timestamp? tripStartedAt;
+  final Timestamp? tripEndedAt;
+  final Timestamp? completedAt;
+  final Timestamp? cancelledAt;
   final Timestamp? updatedAt;
   final Timestamp? lastDeclinedAt;
 
@@ -228,6 +240,12 @@ class LiveRide {
           : 'unpaid',
       paidAt: timestampFrom(data['paidAt']),
       createdAt: timestampFrom(data['createdAt']),
+      acceptedAt: timestampFrom(data['acceptedAt']),
+      driverArrivedAt: timestampFrom(data['driverArrivedAt']),
+      tripStartedAt: timestampFrom(data['tripStartedAt']),
+      tripEndedAt: timestampFrom(data['tripEndedAt']),
+      completedAt: timestampFrom(data['completedAt']),
+      cancelledAt: timestampFrom(data['cancelledAt']),
       updatedAt: timestampFrom(data['updatedAt']),
       lastDeclinedAt: timestampFrom(data['lastDeclinedAt']),
     );
@@ -270,12 +288,14 @@ class NearbyDriver {
     required this.lat,
     required this.lng,
     this.heading = 0,
+    this.updatedAt,
   });
 
   final String driverId;
   final double lat;
   final double lng;
   final double heading;
+  final Timestamp? updatedAt;
 
   factory NearbyDriver.fromMap(String id, Map<String, dynamic> data) {
     return NearbyDriver(
@@ -289,6 +309,7 @@ class NearbyDriver {
           (data['longitude'] as num?)?.toDouble() ??
           0,
       heading: (data['heading'] as num?)?.toDouble() ?? 0,
+      updatedAt: timestampFrom(data['updatedAt']),
     );
   }
 }
@@ -411,6 +432,8 @@ Map<String, Object?> rideStatusUpdateMap(RideStatus status, {String? driverId}) 
   return {
     'status': status.toFirestore(),
     'driverId': ?driverId,
+    if (status == RideStatus.cancelled)
+      'cancelledAt': FieldValue.serverTimestamp(),
     'updatedAt': FieldValue.serverTimestamp(),
   };
 }

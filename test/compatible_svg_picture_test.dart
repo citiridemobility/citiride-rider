@@ -12,10 +12,13 @@ void main() {
 
     final normalized = CompatibleSvgPicture.normalizeFigmaImagePatterns(svg);
 
-    expect(normalized, contains('figma_image_clip_2_pattern2_7050_37985'));
-    expect(normalized, contains('href="data:image/png;base64,'));
-    expect(normalized, isNot(contains('fill="url(#pattern2_7050_37985)"')));
-    expect(normalized, contains('transform="rotate(-134.408 214.016 335.66)"'));
+    expect(normalized.contains('figma_image_clip_2_pattern2_7050_37985'), true);
+    expect(normalized.contains('href="data:image/png;base64,'), true);
+    expect(normalized.contains('fill="url(#pattern2_7050_37985)"'), false);
+    expect(
+      normalized.contains('transform="rotate(-134.408 214.016 335.66)"'),
+      true,
+    );
   });
 
   test(
@@ -27,9 +30,9 @@ void main() {
 
       final normalized = CompatibleSvgPicture.normalizeFigmaImagePatterns(svg);
 
-      expect(normalized, contains('figma_image_clip_2_pattern2_'));
-      expect(normalized, contains('xlink:href="data:image/png;base64,'));
-      expect(normalized, isNot(contains('fill="url(#pattern2_')));
+      expect(normalized.contains('figma_image_clip_2_pattern2_'), true);
+      expect(normalized.contains('xlink:href="data:image/png;base64,'), true);
+      expect(normalized.contains('fill="url(#pattern2_'), false);
     },
   );
   test('removes unsupported slide two blur glow groups', () async {
@@ -39,10 +42,10 @@ void main() {
 
     final cleaned = CompatibleSvgPicture.removeUnsupportedBlurGlows(svg);
 
-    expect(cleaned, isNot(contains('<g filter="url(#filter0_f_')));
-    expect(cleaned, isNot(contains('<g filter="url(#filter1_f_')));
-    expect(cleaned, isNot(contains('fill="#0291FF"')));
-    expect(cleaned, isNot(contains('fill="#CF08E9"')));
+    expect(cleaned.contains('<g filter="url(#filter0_f_'), false);
+    expect(cleaned.contains('<g filter="url(#filter1_f_'), false);
+    expect(cleaned.contains('fill="#0291FF"'), false);
+    expect(cleaned.contains('fill="#CF08E9"'), false);
   });
 
   test('preserves fill-opacity on wallet sign up card logo', () async {
@@ -52,7 +55,7 @@ void main() {
 
     final normalized = CompatibleSvgPicture.normalizeFigmaImagePatterns(svg);
 
-    expect(normalized, contains('opacity="0.2"'));
-    expect(normalized, isNot(contains('fill="url(#pattern2_8893_8522)"')));
+    expect(normalized.contains('opacity="0.2"'), true);
+    expect(normalized.contains('fill="url(#pattern2_8893_8522)"'), false);
   });
 }

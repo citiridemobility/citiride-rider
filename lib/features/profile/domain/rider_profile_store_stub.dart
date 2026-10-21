@@ -20,6 +20,10 @@ class RiderProfileStore {
 
   Future<void> load() async {}
 
+  Future<void> restoreForAccount({required String email, String? uid}) async {
+    profile.value = profile.value.copyWith(email: email.trim().toLowerCase());
+  }
+
   Future<void> update(RiderProfile nextProfile) async {
     profile.value = nextProfile;
   }

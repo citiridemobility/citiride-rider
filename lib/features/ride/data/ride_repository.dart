@@ -1,6 +1,9 @@
+import 'dart:math' as math;
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../../core/firebase/firestore_paths.dart';
 import '../domain/live_ride.dart';
@@ -97,20 +100,65 @@ class RideRepository {
         .map((snap) => DriverProfileSummary.fromMap(snap.id, snap.data()!));
   }
 
-  /// Nearby online drivers from the `drivers` collection.
-  /// Returns a live stream of driver positions for map display.
-  Stream<List<NearbyDriver>> watchNearbyDrivers() {
+  /// Nearby, recently-updated online drivers from the `drivers` collection.
+  ///
+  /// The driver app writes its real device position here while online. The
+  /// radius check happens client-side for now because the matching collection
+  /// is not yet queried with a geohash range. Never return a driver's last
+  /// known position after its location heartbeat has gone stale.
+  Stream<List<NearbyDriver>> watchNearbyDrivers({
+    required LatLng center,
+    double radiusMeters = 5000,
+    int limit = 24,
+    Duration maximumLocationAge = const Duration(minutes: 2),
+  }) {
     return _db
         .collection(FirestoreCollections.drivers)
         .where('status', isEqualTo: 'online')
         .snapshots()
         .map((snap) {
-          return snap.docs
+          final now = DateTime.now();
+          final nearby = snap.docs
               .map((doc) => NearbyDriver.fromMap(doc.id, doc.data()))
-              .where((d) => d.lat != 0 && d.lng != 0)
-              .toList(growable: false);
+              .where((driver) {
+                final updatedAt = driver.updatedAt?.toDate();
+                return driver.lat != 0 &&
+                    driver.lng != 0 &&
+                    updatedAt != null &&
+                    now.difference(updatedAt) <= maximumLocationAge &&
+                    _distanceMeters(center, LatLng(driver.lat, driver.lng)) <=
+                        radiusMeters;
+              })
+              .toList()
+            ..sort(
+              (first, second) => _distanceMeters(
+                center,
+                LatLng(first.lat, first.lng),
+              ).compareTo(
+                _distanceMeters(center, LatLng(second.lat, second.lng))),
+            );
+          return nearby.take(limit).toList(growable: false);
         });
   }
+
+  static double _distanceMeters(LatLng first, LatLng second) {
+    const earthRadiusMeters = 6371000.0;
+    final lat1 = _radians(first.latitude);
+    final lat2 = _radians(second.latitude);
+    final deltaLat = _radians(second.latitude - first.latitude);
+    final deltaLng = _radians(second.longitude - first.longitude);
+    final a =
+        math.sin(deltaLat / 2) * math.sin(deltaLat / 2) +
+        math.cos(lat1) *
+            math.cos(lat2) *
+            math.sin(deltaLng / 2) *
+            math.sin(deltaLng / 2);
+    return earthRadiusMeters *
+        2 *
+        math.atan2(math.sqrt(a), math.sqrt(1 - a));
+  }
+
+  static double _radians(double degrees) => degrees * math.pi / 180;
 
   /// Open requests for this rider (useful if app restarts mid-search).
   Stream<List<LiveRide>> watchOpenRequestsForRider(String riderId) {

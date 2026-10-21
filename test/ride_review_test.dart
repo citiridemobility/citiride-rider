@@ -78,13 +78,13 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Cancel'), findsOneWidget);
-    expect(nestedButton(tester, 'ride-success-done-button').onPressed, isNull);
+    expect(nestedButton(tester, 'ride-success-done-button').onPressed, null);
 
     await tester.tap(find.byKey(const ValueKey('ride-rating-star-5')));
     await tester.pump();
 
     expect(find.text('Excellent!'), findsOneWidget);
-    expect(nestedButton(tester, 'ride-success-done-button').onPressed, isNull);
+    expect(nestedButton(tester, 'ride-success-done-button').onPressed, null);
 
     await tester.tap(find.byKey(const ValueKey('review-pill-Safe driving')));
     await tester.pump(const Duration(milliseconds: 180));
@@ -100,8 +100,8 @@ void main() {
     final selectedDecoration = selectedPill.decoration! as BoxDecoration;
     expect(selectedDecoration.color, AppColors.white);
     expect(
-      nestedButton(tester, 'ride-success-done-button').onPressed,
-      isNotNull,
+      nestedButton(tester, 'ride-success-done-button').onPressed != null,
+      true,
     );
 
     await tester.tap(
@@ -154,7 +154,7 @@ void main() {
     expect(find.text('Review'), findsOneWidget);
     expect(
       nestedButton(tester, 'manual-review-continue-button').onPressed,
-      isNull,
+      null,
     );
 
     await tester.enterText(
@@ -164,8 +164,8 @@ void main() {
     await tester.pump();
 
     expect(
-      nestedButton(tester, 'manual-review-continue-button').onPressed,
-      isNotNull,
+      nestedButton(tester, 'manual-review-continue-button').onPressed != null,
+      true,
     );
 
     await tester.tap(

@@ -295,7 +295,9 @@ Polyline citirideRoutePolyline(List<LatLng> points) {
     points: points,
     color: AppColors.citirideYellow,
     width: kIsWeb ? 5 : 7,
-    geodesic: true,
+    // Routes API points already follow roads. Geodesic interpolation bends
+    // their segments and lets the visible route drift off the road geometry.
+    geodesic: false,
     jointType: JointType.round,
     startCap: Cap.roundCap,
     endCap: Cap.roundCap,
@@ -310,7 +312,7 @@ Polyline citirideRoutePolylineOutline(List<LatLng> points) {
     points: points,
     color: const Color(0xE6000000),
     width: kIsWeb ? 9 : 12,
-    geodesic: true,
+    geodesic: false,
     jointType: JointType.round,
     startCap: Cap.roundCap,
     endCap: Cap.roundCap,

@@ -50,6 +50,6 @@ void main() {
       const CitiridePlace(title: 'Home', isCurrentLocation: true),
     );
 
-    expect(await store.load(), isEmpty);
+    expect((await store.load()).isEmpty, true);
   });
 }
