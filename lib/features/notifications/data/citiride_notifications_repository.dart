@@ -35,12 +35,11 @@ class CitirideNotification {
 
 class CitirideNotificationsRepository {
   CitirideNotificationsRepository({
-    FirebaseFirestore? firestore,
+    this._firestore,
     CitirideWalletClient? walletClient,
     CitirideSessionStore? sessionStore,
     CitirideAuthService? authService,
-  }) : _firestore = firestore,
-       _walletClient = walletClient ?? CitirideWalletClient(),
+  }) : _walletClient = walletClient ?? CitirideWalletClient(),
        _sessionStore = sessionStore ?? const CitirideSessionStore(),
        _authService = authService ?? CitirideAuthService();
 
@@ -79,8 +78,7 @@ class CitirideNotificationsRepository {
 
       final activities = <CitirideNotification>[
         for (final ride in rides) ..._rideActivities(ride),
-        for (final transaction in transactions)
-          _walletActivity(transaction),
+        for (final transaction in transactions) _walletActivity(transaction),
       ]..sort((first, second) => second.occurredAt.compareTo(first.occurredAt));
       controller.add(activities);
     }
@@ -96,7 +94,8 @@ class CitirideNotificationsRepository {
 
     controller = StreamController<List<CitirideNotification>>(
       onListen: () {
-        final firestore = _firestore ??
+        final firestore =
+            _firestore ??
             (Firebase.apps.isNotEmpty ? FirebaseFirestore.instance : null);
         if (firestore != null) {
           ridesSubscription = firestore
@@ -106,12 +105,14 @@ class CitirideNotificationsRepository {
               .listen(
                 (snapshot) {
                   rides = snapshot.docs
-                      .map((document) =>
-                          LiveRide.fromMap(document.id, document.data()))
+                      .map(
+                        (document) =>
+                            LiveRide.fromMap(document.id, document.data()),
+                      )
                       .toList(growable: false);
                   publish();
                 },
-                onError: (_, __) {
+                onError: (_, _) {
                   // A transient Firestore error must not hide cached wallet data.
                   publish();
                 },
@@ -281,7 +282,8 @@ class CitirideNotificationsRepository {
           'Reference: ${transaction.reference.isEmpty ? 'Not available' : transaction.reference}'
           '$providerLine'
           '$balanceLine',
-      occurredAt: transaction.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0),
+      occurredAt:
+          transaction.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0),
     );
   }
 
