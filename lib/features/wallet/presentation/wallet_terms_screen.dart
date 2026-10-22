@@ -53,7 +53,7 @@ class _WalletTermsScreenState extends State<WalletTermsScreen> {
       return;
     }
 
-    context.go('/wallet-phone-number');
+    context.go('/wallet-email');
   }
 
   Future<void> _continue() async {

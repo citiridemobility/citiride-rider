@@ -30,11 +30,9 @@ import '../../features/wallet/presentation/wallet_email_screen.dart';
 import '../../features/wallet/presentation/wallet_get_started_screen.dart';
 import '../../features/wallet/presentation/wallet_home_screen.dart';
 import '../../features/wallet/presentation/wallet_passcode_screen.dart';
-import '../../features/wallet/presentation/wallet_phone_number_screen.dart';
 import '../../features/wallet/presentation/wallet_sign_up_screen.dart';
 import '../../features/wallet/presentation/wallet_terms_screen.dart';
 import '../../features/wallet/presentation/wallet_verify_email_screen.dart';
-import '../../features/wallet/presentation/wallet_verify_phone_screen.dart';
 import '../../features/wallet/presentation/wallet_transaction_pin_screens.dart';
 import '../../features/wallet/presentation/wallet_withdraw_auth_screens.dart';
 import '../../features/wallet/presentation/wallet_withdraw_pin_screen.dart';
@@ -195,22 +193,6 @@ abstract final class AppRouter {
           name: 'wallet-get-started',
           builder: (context, state) {
             return const WalletGetStartedScreen();
-          },
-        ),
-        GoRoute(
-          path: '/wallet-phone-number',
-          name: 'wallet-phone-number',
-          builder: (context, state) {
-            return const WalletPhoneNumberScreen();
-          },
-        ),
-        GoRoute(
-          path: '/wallet-verify-phone',
-          name: 'wallet-verify-phone',
-          builder: (context, state) {
-            return WalletVerifyPhoneScreen(
-              phoneDigits: state.uri.queryParameters['phone'] ?? '',
-            );
           },
         ),
         GoRoute(

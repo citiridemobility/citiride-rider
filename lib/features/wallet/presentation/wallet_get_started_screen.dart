@@ -103,7 +103,7 @@ class _WalletGetStartedScreenState extends State<WalletGetStartedScreen> {
                   child: FilledButton(
                     key: const ValueKey('wallet-get-started-button'),
                     onPressed: _canContinue
-                        ? () => context.push('/wallet-phone-number')
+                        ? () => context.push('/wallet-email')
                         : null,
                     style: FilledButton.styleFrom(
                       backgroundColor: AppColors.citirideYellow,

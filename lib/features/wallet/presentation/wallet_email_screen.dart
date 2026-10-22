@@ -59,7 +59,7 @@ class _WalletEmailScreenState extends State<WalletEmailScreen> {
       return;
     }
 
-    context.go('/wallet-phone-number');
+    context.go('/wallet-get-started');
   }
 
   Future<void> _onNext() async {
