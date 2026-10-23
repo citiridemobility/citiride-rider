@@ -45,11 +45,9 @@ export function fromKobo(kobo) {
   return Number(kobo || 0) / 100;
 }
 
-/** Platform take rate. Override with CITIRIDE_COMMISSION_PERCENT (0–100). */
+/** Driver earnings are never reduced by a ride commission. */
 export function commissionPercent() {
-  const n = Number(process.env.CITIRIDE_COMMISSION_PERCENT ?? 20);
-  if (!Number.isFinite(n) || n < 0) return 20;
-  return Math.min(100, n);
+  return 0;
 }
 
 export function platformWalletId() {

@@ -23,6 +23,11 @@ import {
   requestWithdrawal,
   simulateTestDeposit,
 } from './ledger.js';
+import {
+  getDriverTicketStatus,
+  purchaseDriverTicket,
+  setDriverAvailability,
+} from '../driver-ticket.js';
 import { verifyBearerToken } from './util.js';
 
 export const walletRouter = express.Router();
@@ -118,6 +123,56 @@ walletRouter.get('/me/transactions', async (req, res) => {
     return res.status(500).json({
       error: 'wallet_transactions_failed',
       message: error.message || 'Unable to load transactions',
+    });
+  }
+});
+
+/** Driver availability is ticket-gated on the server, never by local state. */
+walletRouter.get('/driver/ticket', async (req, res) => {
+  try {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+
+    const ticket = await getDriverTicketStatus(auth.uid);
+    return res.json({ ok: true, ticket });
+  } catch (error) {
+    console.error('driver ticket status failed', error);
+    return res.status(400).json({
+      error: error.code || 'ticket_status_failed',
+      message: error.message || 'Unable to load driver ticket status.',
+    });
+  }
+});
+
+walletRouter.post('/driver/ticket/purchase', async (req, res) => {
+  try {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+
+    const result = await purchaseDriverTicket(auth.uid);
+    return res.json({ ok: true, ...result });
+  } catch (error) {
+    console.error('driver ticket purchase failed', error);
+    return res.status(400).json({
+      error: error.code || 'ticket_purchase_failed',
+      message: error.message || 'Unable to pay the driver ticket fee.',
+    });
+  }
+});
+
+walletRouter.post('/driver/availability', async (req, res) => {
+  try {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+
+    const online = Boolean(req.body?.online);
+    const ticket = await setDriverAvailability(auth.uid, online);
+    return res.json({ ok: true, ticket });
+  } catch (error) {
+    console.error('driver availability update failed', error);
+    return res.status(400).json({
+      error: error.code || 'availability_update_failed',
+      message: error.message || 'Unable to update your availability.',
     });
   }
 });
