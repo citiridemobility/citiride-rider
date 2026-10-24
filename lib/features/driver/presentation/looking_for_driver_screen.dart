@@ -20,6 +20,7 @@ import '../../../core/session/citiride_session_store.dart';
 import '../../pickup/presentation/select_pickup_location_screen.dart';
 import '../../profile/domain/rider_profile_store.dart';
 import '../../ride/data/ride_repository.dart';
+import '../../ride/data/citiride_trip_navigation_service.dart';
 import '../../ride/domain/live_ride.dart';
 import '../../ride/presentation/ride_trip_session.dart';
 import '../../../shared/widgets/citiride_live_route_map.dart';
@@ -616,6 +617,7 @@ class _DriverFoundScreenState extends State<DriverFoundScreen> {
   StreamSubscription<RideTripSnapshot>? _tripSub;
   LatLng? _driverLatLng;
   double? _driverHeading;
+  DateTime? _driverUpdatedAt;
   String _driverName = 'Driver';
   String? _driverImage;
   String? _driverVehicle;
@@ -674,6 +676,7 @@ class _DriverFoundScreenState extends State<DriverFoundScreen> {
       setState(() {
         _driverLatLng = snapshot.driverLatLng;
         _driverHeading = snapshot.driverHeading;
+        _driverUpdatedAt = snapshot.driverUpdatedAt;
         _driverName = snapshot.driverName;
         _driverImage = snapshot.driverImage;
         _driverVehicle = snapshot.driverVehicle;
@@ -906,12 +909,18 @@ class _DriverFoundScreenState extends State<DriverFoundScreen> {
                     pickupLatLng: _pickupLatLng,
                     destinationLatLng: _destinationLatLng,
                     routeSemanticsLabel: 'Driver found map cars',
-                    vehicleProgress: _driverLatLng == null ? 0.08 : null,
+                    rideId: widget.rideId,
+                    vehicleProgress:
+                        widget.rideId == null && _driverLatLng == null
+                        ? 0.08
+                        : null,
                     driverLatLng: _driverLatLng,
                     driverHeading: _driverHeading,
+                    driverUpdatedAt: _driverUpdatedAt,
                     vehicleAsset: 'assets/images/car.png',
                     vehicleWidth: 44,
                     vehicleHeight: 54,
+                    routeDriverToPickup: true,
                   ),
                 ),
                 Positioned(
@@ -1010,6 +1019,7 @@ class _ArrivingScreenState extends State<ArrivingScreen> {
   StreamSubscription<RideTripSnapshot>? _tripSub;
   LatLng? _driverLatLng;
   double? _driverHeading;
+  DateTime? _driverUpdatedAt;
   String _driverName = 'Driver';
   String? _driverImage;
   String? _driverVehicle;
@@ -1066,6 +1076,7 @@ class _ArrivingScreenState extends State<ArrivingScreen> {
       setState(() {
         _driverLatLng = snapshot.driverLatLng;
         _driverHeading = snapshot.driverHeading;
+        _driverUpdatedAt = snapshot.driverUpdatedAt;
         _driverName = snapshot.driverName;
         _driverImage = snapshot.driverImage;
         _driverVehicle = snapshot.driverVehicle;
@@ -1324,9 +1335,14 @@ class _ArrivingScreenState extends State<ArrivingScreen> {
                     pickupLatLng: _pickupLatLng,
                     destinationLatLng: _destinationLatLng,
                     routeSemanticsLabel: 'Arriving map image',
-                    vehicleProgress: _driverLatLng == null ? 0.18 : null,
+                    rideId: widget.rideId,
+                    vehicleProgress:
+                        widget.rideId == null && _driverLatLng == null
+                        ? 0.18
+                        : null,
                     driverLatLng: _driverLatLng,
                     driverHeading: _driverHeading,
+                    driverUpdatedAt: _driverUpdatedAt,
                     vehicleAsset: 'assets/images/car.png',
                     vehicleWidth: 44,
                     vehicleHeight: 54,
@@ -1443,6 +1459,7 @@ class _RideArrivalScreenState extends State<RideArrivalScreen> {
   StreamSubscription<RideTripSnapshot>? _tripSub;
   LatLng? _driverLatLng;
   double? _driverHeading;
+  DateTime? _driverUpdatedAt;
   String _driverName = 'Driver';
   String? _driverImage;
   String? _driverVehicle;
@@ -1495,6 +1512,7 @@ class _RideArrivalScreenState extends State<RideArrivalScreen> {
       setState(() {
         _driverLatLng = snapshot.driverLatLng;
         _driverHeading = snapshot.driverHeading;
+        _driverUpdatedAt = snapshot.driverUpdatedAt;
         _driverName = snapshot.driverName;
         _driverImage = snapshot.driverImage;
         _driverVehicle = snapshot.driverVehicle;
@@ -1686,9 +1704,14 @@ class _RideArrivalScreenState extends State<RideArrivalScreen> {
                     pickupLatLng: _pickupLatLng,
                     destinationLatLng: _destinationLatLng,
                     routeSemanticsLabel: 'Ride arrival map image',
-                    vehicleProgress: _driverLatLng == null ? 0.02 : null,
+                    rideId: widget.rideId,
+                    vehicleProgress:
+                        widget.rideId == null && _driverLatLng == null
+                        ? 0.02
+                        : null,
                     driverLatLng: _driverLatLng,
                     driverHeading: _driverHeading,
+                    driverUpdatedAt: _driverUpdatedAt,
                     vehicleAsset: 'assets/images/car.png',
                     vehicleWidth: 44,
                     vehicleHeight: 54,
@@ -1780,6 +1803,7 @@ class _DrivingToDestinationScreenState
   StreamSubscription<RideTripSnapshot>? _tripSub;
   LatLng? _driverLatLng;
   double? _driverHeading;
+  DateTime? _driverUpdatedAt;
   String _driverName = 'Driver';
   String? _driverImage;
   String? _driverVehicle;
@@ -1831,6 +1855,7 @@ class _DrivingToDestinationScreenState
       setState(() {
         _driverLatLng = snapshot.driverLatLng;
         _driverHeading = snapshot.driverHeading;
+        _driverUpdatedAt = snapshot.driverUpdatedAt;
         _driverName = snapshot.driverName;
         _driverImage = snapshot.driverImage;
         _driverVehicle = snapshot.driverVehicle;
@@ -1988,9 +2013,14 @@ class _DrivingToDestinationScreenState
                     pickupLatLng: _pickupLatLng,
                     destinationLatLng: _destinationLatLng,
                     routeSemanticsLabel: 'Driving to destination map image',
-                    vehicleProgress: _driverLatLng == null ? 0.46 : null,
+                    rideId: widget.rideId,
+                    vehicleProgress:
+                        widget.rideId == null && _driverLatLng == null
+                        ? 0.46
+                        : null,
                     driverLatLng: _driverLatLng,
                     driverHeading: _driverHeading,
+                    driverUpdatedAt: _driverUpdatedAt,
                     vehicleAsset: 'assets/images/car.png',
                     vehicleWidth: 44,
                     vehicleHeight: 54,
@@ -2967,9 +2997,11 @@ class _DriverFlowMap extends StatefulWidget {
     required this.destinationLatLng,
     required this.routeSemanticsLabel,
     this.showNearbyCars = false,
+    this.rideId,
     this.vehicleProgress,
     this.driverLatLng,
     this.driverHeading,
+    this.driverUpdatedAt,
     this.vehicleAsset = 'assets/images/car.png',
     this.vehicleWidth = 44,
     this.vehicleHeight = 54,
@@ -2983,9 +3015,11 @@ class _DriverFlowMap extends StatefulWidget {
   final LatLng? destinationLatLng;
   final String routeSemanticsLabel;
   final bool showNearbyCars;
+  final String? rideId;
   final double? vehicleProgress;
   final LatLng? driverLatLng;
   final double? driverHeading;
+  final DateTime? driverUpdatedAt;
   final String vehicleAsset;
   final double vehicleWidth;
   final double vehicleHeight;
@@ -2999,14 +3033,33 @@ class _DriverFlowMap extends StatefulWidget {
 
 class _DriverFlowMapState extends State<_DriverFlowMap> {
   final _routeService = CitirideRouteService();
+  final _tripNavigationService = CitirideTripNavigationService();
   CitirideRoute? _route;
   bool _isLoadingRoute = false;
   int _routeGeneration = 0;
+  Timer? _freshnessTimer;
+  Timer? _routeRefreshTimer;
+  bool _followDriver = false;
 
   @override
   void initState() {
     super.initState();
+    _freshnessTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && widget.driverUpdatedAt != null) setState(() {});
+    });
+    _routeRefreshTimer = Timer.periodic(const Duration(seconds: 45), (_) {
+      if (mounted && widget.driverLatLng != null && !_isLoadingRoute) {
+        _loadRoute();
+      }
+    });
     _loadRoute();
+  }
+
+  @override
+  void dispose() {
+    _freshnessTimer?.cancel();
+    _routeRefreshTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -3020,8 +3073,7 @@ class _DriverFlowMapState extends State<_DriverFlowMap> {
       widget.driverLatLng,
       oldWidget.driverLatLng,
     );
-    if (endpointsChanged ||
-        (widget.routeDriverToPickup && driverMovedSignificantly)) {
+    if (endpointsChanged || driverMovedSignificantly) {
       _loadRoute();
     }
   }
@@ -3034,9 +3086,12 @@ class _DriverFlowMapState extends State<_DriverFlowMap> {
 
     final LatLng? origin;
     final LatLng? target;
-    if (widget.routeDriverToPickup && driver != null && pickup != null) {
+    final hasLiveTrip =
+        widget.rideId != null && widget.rideId!.trim().isNotEmpty;
+    if (driver != null &&
+        ((widget.routeDriverToPickup && pickup != null) || hasLiveTrip)) {
       origin = driver;
-      target = pickup;
+      target = widget.routeDriverToPickup ? pickup : destination;
     } else {
       origin = pickup;
       target = destination;
@@ -3054,10 +3109,13 @@ class _DriverFlowMapState extends State<_DriverFlowMap> {
       _isLoadingRoute = true;
     });
 
-    final route = await _routeService.routeBetween(
-      origin: origin,
-      destination: target,
-    );
+    final route = hasLiveTrip && driver != null
+        ? await _tripNavigationService.routeForRide(
+              rideId: widget.rideId!,
+              destination: target,
+            ) ??
+            CitirideRoute.estimated(origin: origin, destination: target)
+        : await _routeService.routeBetween(origin: origin, destination: target);
 
     if (!mounted || generation != _routeGeneration) {
       return;
@@ -3103,6 +3161,7 @@ class _DriverFlowMapState extends State<_DriverFlowMap> {
               widget.driverLatLng == null ? widget.vehicleProgress : null,
           vehiclePosition: widget.driverLatLng,
           vehicleHeading: widget.driverHeading,
+          followVehicle: _followDriver,
           vehicleMarkerAsset: widget.vehicleAsset,
           vehicleMarkerWidth: widget.vehicleWidth,
           vehicleMarkerHeight: widget.vehicleHeight,
@@ -3117,7 +3176,104 @@ class _DriverFlowMapState extends State<_DriverFlowMap> {
             top: MediaQuery.paddingOf(context).top + 112,
             child: const Center(child: _DriverRouteLoadingChip()),
           ),
+        if (widget.driverLatLng != null)
+          Positioned(
+            top: MediaQuery.paddingOf(context).top + 112,
+            right: 16,
+            child: _DriverMapControl(
+              label: _followDriver ? 'Following' : 'Follow driver',
+              icon: _followDriver ? Icons.gps_fixed : Icons.my_location,
+              onTap: () => setState(() => _followDriver = !_followDriver),
+            ),
+          ),
+        if (widget.driverUpdatedAt != null)
+          Positioned(
+            top: MediaQuery.paddingOf(context).top + 160,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: _DriverLocationFreshness(
+                updatedAt: widget.driverUpdatedAt!,
+              ),
+            ),
+          ),
       ],
+    );
+  }
+}
+
+class _DriverMapControl extends StatelessWidget {
+  const _DriverMapControl({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.citirideBlack.withValues(alpha: 0.88),
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: AppColors.citirideYellow, size: 16),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: AppColors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DriverLocationFreshness extends StatelessWidget {
+  const _DriverLocationFreshness({required this.updatedAt});
+
+  final DateTime updatedAt;
+
+  @override
+  Widget build(BuildContext context) {
+    final seconds = DateTime.now().difference(updatedAt).inSeconds;
+    final safeSeconds = seconds < 0 ? 0 : seconds;
+    final label = safeSeconds < 6
+        ? 'Driver location live'
+        : safeSeconds < 60
+        ? 'Driver updated ${safeSeconds}s ago'
+        : 'Driver updated ${(safeSeconds / 60).floor()}m ago';
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppColors.citirideBlack.withValues(alpha: 0.84),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: safeSeconds > 30 ? AppColors.citirideYellow : AppColors.white,
+            fontSize: 10.5,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
     );
   }
 }

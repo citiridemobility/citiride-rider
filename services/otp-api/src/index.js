@@ -30,6 +30,7 @@ import {
 } from './firebase-admin.js';
 import { hasPaystack } from './paystack/client.js';
 import { handlePaystackWebhook, walletRouter } from './wallet/routes.js';
+import { tripNavigationRouter } from './trip-navigation.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, '../public');
@@ -107,6 +108,7 @@ app.get('/health', (_req, res) => {
 });
 
 app.use('/v1/wallet', walletRouter);
+app.use('/v1/trips', tripNavigationRouter);
 app.post('/v1/paystack/webhook', (req, res) => {
   // Prefer raw buffer captured by express.json verify hook.
   if (!Buffer.isBuffer(req.body) && req.rawBody) {

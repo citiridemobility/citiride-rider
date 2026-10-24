@@ -22,19 +22,17 @@ class RideTripSnapshot {
 
   LatLng? get driverLatLng {
     final live = driverLocation;
-    if (live != null) {
+    if (live != null && live.hasValidCoordinates) {
       return LatLng(live.lat, live.lng);
-    }
-    final fromRide = ride.driverLocation;
-    if (fromRide != null) {
-      return LatLng(fromRide.lat, fromRide.lng);
     }
     return null;
   }
 
   double? get driverHeading {
-    return driverLocation?.heading ?? ride.driverLocation?.heading;
+    return driverLocation?.heading;
   }
+
+  DateTime? get driverUpdatedAt => driverLocation?.updatedAt?.toDate();
 
   /// Prefer the live `drivers/{id}` profile for the current [ride.driverId]
   /// so a previous driver's name never sticks after reassignment.
@@ -79,7 +77,10 @@ class RideTripSnapshot {
   }
 }
 
-/// Watches a ride doc (+ optional driverLocations/{driverId}) for the trip UI.
+/// Watches the ride document and its trip-scoped driver location.
+///
+/// Keeping live GPS under `rides/{rideId}.driverLocation` means this UI never
+/// subscribes to an arbitrary driver's global location feed.
 class RideTripSession {
   RideTripSession({
     required this.rideId,
@@ -90,7 +91,6 @@ class RideTripSession {
   final RideRepository _repository;
 
   StreamSubscription<LiveRide>? _rideSub;
-  StreamSubscription<DriverLocation>? _locationSub;
   StreamSubscription<DriverProfileSummary>? _profileSub;
   String? _watchingDriverId;
   RideTripSnapshot? _latest;
@@ -107,9 +107,11 @@ class RideTripSession {
             ride.driverId != null &&
             ride.driverId!.trim().isNotEmpty &&
             ride.driverId == _watchingDriverId;
+        final previousLocation = sameDriver ? _latest?.driverLocation : null;
+        final incomingLocation = ride.driverLocation;
         _latest = RideTripSnapshot(
           ride: ride,
-          driverLocation: sameDriver ? _latest?.driverLocation : null,
+          driverLocation: _newerLocation(incomingLocation, previousLocation),
           driverProfile: sameDriver ? _latest?.driverProfile : null,
         );
         _controller.add(_latest!);
@@ -122,9 +124,7 @@ class RideTripSession {
   void _syncDriverWatches(String? driverId) {
     final clean = driverId?.trim();
     if (clean == null || clean.isEmpty) {
-      unawaited(_locationSub?.cancel() ?? Future<void>.value());
       unawaited(_profileSub?.cancel() ?? Future<void>.value());
-      _locationSub = null;
       _profileSub = null;
       _watchingDriverId = null;
       return;
@@ -133,26 +133,7 @@ class RideTripSession {
       return;
     }
     _watchingDriverId = clean;
-    unawaited(_locationSub?.cancel() ?? Future<void>.value());
     unawaited(_profileSub?.cancel() ?? Future<void>.value());
-
-    _locationSub = _repository.watchDriverLocation(clean).listen(
-      (location) {
-        final ride = _latest?.ride;
-        if (ride == null || ride.driverId != clean) {
-          return;
-        }
-        _latest = RideTripSnapshot(
-          ride: ride,
-          driverLocation: location,
-          driverProfile: _latest?.driverProfile,
-        );
-        _controller.add(_latest!);
-      },
-      onError: (_) {
-        // Driver location is optional; ride status still drives the UI.
-      },
-    );
 
     _profileSub = _repository.watchDriverProfile(clean).listen(
       (profile) {
@@ -173,11 +154,32 @@ class RideTripSession {
     );
   }
 
+  DriverLocation? _newerLocation(
+    DriverLocation? incoming,
+    DriverLocation? previous,
+  ) {
+    if (incoming == null || !incoming.hasValidCoordinates) {
+      return previous;
+    }
+    if (previous == null) {
+      return incoming;
+    }
+
+    final incomingSequence = incoming.sequence;
+    final previousSequence = previous.sequence;
+    if (incomingSequence != null && previousSequence != null) {
+      return incomingSequence >= previousSequence ? incoming : previous;
+    }
+
+    final incomingMillis = incoming.updatedAt?.millisecondsSinceEpoch ?? 0;
+    final previousMillis = previous.updatedAt?.millisecondsSinceEpoch ?? 0;
+    return incomingMillis >= previousMillis ? incoming : previous;
+  }
+
   Future<void> cancelRide() => _repository.cancelRide(rideId);
 
   Future<void> dispose() async {
     await _rideSub?.cancel();
-    await _locationSub?.cancel();
     await _profileSub?.cancel();
     await _controller.close();
   }

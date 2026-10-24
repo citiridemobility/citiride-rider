@@ -46,14 +46,20 @@ service cloud.firestore {
         && resource.data.driverId == authUid();
     }
 
+    function isDriver() {
+      return isSignedIn() && request.auth.token.role == 'driver';
+    }
+
     function isUnassigned(data) {
       return data.driverId == null || data.driverId == '';
     }
 
     match /rides/{rideId} {
-      // Open requests must stay readable so drivers can discover them.
-      // Tighten to geo-queries / Cloud Functions once driver Auth is live.
-      allow read: if true;
+      // Riders can only see their own trip, and drivers can see their current
+      // trip or open requests. This protects the trip-scoped driver location.
+      allow read: if isRideOwner()
+        || isAssignedDriver()
+        || (isDriver() && resource.data.status == 'requested');
 
       allow create: if isSignedIn()
         && request.resource.data.keys().hasAll([
@@ -111,7 +117,9 @@ service cloud.firestore {
     }
 
     match /driverLocations/{driverId} {
-      allow read: if true;
+      // Live rider tracking comes from the assigned ride document, never a
+      // globally-readable driver's raw location stream.
+      allow read: if isSignedIn() && authUid() == driverId;
       allow write: if isSignedIn()
         && authUid() == driverId
         && isValidDriverLocation(request.resource.data);

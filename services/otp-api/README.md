@@ -34,6 +34,23 @@ CITIRIDE_COMMISSION_PERCENT=20
 CITIRIDE_PLATFORM_WALLET_ID=citiride_platform
 ```
 
+### Rider live navigation
+
+- `POST /v1/trips/route` `{ rideId }` â†’ the active rider-only route, encoded
+  polyline, live driver fix and ETA. The server derives whether the route is
+  driverâ†’pickup or driverâ†’destination from the ride status.
+
+This endpoint requires a Firebase ID token and verifies that the caller owns
+the ride. Configure a **server-restricted** Google Routes API key; do not put
+this key in either mobile app:
+
+```env
+GOOGLE_ROUTES_API_KEY=AIza...
+```
+
+The key needs the Google Routes API and should be restricted to the deployed
+OTP API's outbound/server use. The rider app only receives route output.
+
 Webhook URL example:
 
 `https://otp-api-production-db79.up.railway.app/v1/paystack/webhook`

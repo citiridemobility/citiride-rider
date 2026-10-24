@@ -35,6 +35,7 @@ class CitirideLiveRouteMap extends StatefulWidget {
     this.vehicleMarkerHeight = 54,
     this.cameraBoundsPadding = 104,
     this.fitRouteInView = true,
+    this.followVehicle = false,
     this.cameraFocus,
     this.cameraZoom,
     this.mapPadding = EdgeInsets.zero,
@@ -70,6 +71,10 @@ class CitirideLiveRouteMap extends StatefulWidget {
   /// the rider is manually positioning pickup under the center pin).
   final bool fitRouteInView;
 
+  /// Moves the camera with the animated vehicle marker when enabled. The
+  /// default keeps the full active route visible for rider context.
+  final bool followVehicle;
+
   /// Optional camera target. Pickup selection uses the pickup point so the
   /// center pin sits on the route start instead of the destination/midpoint.
   final LatLng? cameraFocus;
@@ -84,22 +89,40 @@ class CitirideLiveRouteMap extends StatefulWidget {
   State<CitirideLiveRouteMap> createState() => _CitirideLiveRouteMapState();
 }
 
-class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
+class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap>
+    with SingleTickerProviderStateMixin {
   Future<_RouteMarkerIcons>? _markerIcons;
   GoogleMapController? _mapController;
   Offset? _pickupScreen;
   Offset? _destinationScreen;
   int _overlayGeneration = 0;
+  late final AnimationController _vehicleAnimation;
+  LatLng? _displayVehiclePosition;
+  double? _displayVehicleHeading;
+  LatLng? _vehicleFrom;
+  LatLng? _vehicleTo;
+  double _vehicleHeadingFrom = 0;
+  double _vehicleHeadingTo = 0;
 
   @override
   void initState() {
     super.initState();
+    _displayVehiclePosition = widget.vehiclePosition;
+    _displayVehicleHeading = widget.vehicleHeading;
+    _vehicleAnimation = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..addListener(_advanceVehicleAnimation);
     _loadMarkerIcons();
   }
 
   @override
   void didUpdateWidget(covariant CitirideLiveRouteMap oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.vehiclePosition != oldWidget.vehiclePosition ||
+        widget.vehicleHeading != oldWidget.vehicleHeading) {
+      _animateVehicleTo(widget.vehiclePosition, widget.vehicleHeading);
+    }
     if (widget.route?.arrivalText != oldWidget.route?.arrivalText ||
         widget.route?.pickupEtaText != oldWidget.route?.pickupEtaText ||
         _pickupLabel(widget.route) != _pickupLabel(oldWidget.route) ||
@@ -121,6 +144,75 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
         widget.fitRouteInView != oldWidget.fitRouteInView) {
       unawaited(_refreshOverlayPositions());
     }
+  }
+
+  @override
+  void dispose() {
+    _vehicleAnimation
+      ..removeListener(_advanceVehicleAnimation)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _animateVehicleTo(LatLng? next, double? nextHeading) {
+    if (next == null) {
+      _vehicleAnimation.stop();
+      setState(() {
+        _displayVehiclePosition = null;
+        _displayVehicleHeading = null;
+      });
+      return;
+    }
+
+    final current = _displayVehiclePosition;
+    final heading = _normalizeHeading(nextHeading ?? _displayVehicleHeading ?? 0);
+    if (current == null || _samePoint(current, next)) {
+      _vehicleAnimation.stop();
+      setState(() {
+        _displayVehiclePosition = next;
+        _displayVehicleHeading = heading;
+      });
+      return;
+    }
+
+    _vehicleFrom = current;
+    _vehicleTo = next;
+    _vehicleHeadingFrom = _displayVehicleHeading ?? heading;
+    _vehicleHeadingTo = heading;
+    final distance = _distanceMeters(current, next);
+    _vehicleAnimation.duration = Duration(
+      milliseconds: (700 + distance * 7).round().clamp(900, 2800).toInt(),
+    );
+    _vehicleAnimation.forward(from: 0);
+  }
+
+  void _advanceVehicleAnimation() {
+    final from = _vehicleFrom;
+    final to = _vehicleTo;
+    if (!mounted || from == null || to == null) return;
+    final t = Curves.easeOutCubic.transform(_vehicleAnimation.value);
+    setState(() {
+      _displayVehiclePosition = LatLng(
+        from.latitude + (to.latitude - from.latitude) * t,
+        from.longitude + (to.longitude - from.longitude) * t,
+      );
+      _displayVehicleHeading = _interpolateHeading(
+        _vehicleHeadingFrom,
+        _vehicleHeadingTo,
+        t,
+      );
+    });
+  }
+
+  bool _samePoint(LatLng first, LatLng second) =>
+      (first.latitude - second.latitude).abs() < 0.0000001 &&
+      (first.longitude - second.longitude).abs() < 0.0000001;
+
+  double _normalizeHeading(double value) => ((value % 360) + 360) % 360;
+
+  double _interpolateHeading(double from, double to, double t) {
+    final difference = ((to - from + 540) % 360) - 180;
+    return _normalizeHeading(from + difference * t);
   }
 
   String _pickupLabel(CitirideRoute? route) {
@@ -234,13 +326,17 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
               ),
               fallbackSemanticsLabel: widget.fallbackSemanticsLabel,
               cameraTarget:
-                  widget.vehiclePosition ??
-                  widget.cameraFocus ??
-                  (widget.fitRouteInView ? route?.center : route?.routeStart),
+                  widget.followVehicle && _displayVehiclePosition != null
+                  ? _displayVehiclePosition
+                  : widget.cameraFocus ??
+                        (widget.fitRouteInView
+                            ? route?.center
+                            : route?.routeStart),
               cameraZoom: widget.cameraZoom,
               cameraBounds:
                   widget.fitRouteInView &&
-                      widget.vehiclePosition == null &&
+                      (!widget.followVehicle ||
+                          _displayVehiclePosition == null) &&
                       widget.cameraFocus == null
                   ? route?.latLngBounds
                   : null,
@@ -248,14 +344,14 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
               padding: widget.mapPadding,
               onMapCreated: _handleMapCreated,
               markers: {
-                if (icons != null && widget.vehiclePosition != null)
+                if (icons != null && _displayVehiclePosition != null)
                   Marker(
                     markerId: const MarkerId('citiride-route-vehicle'),
-                    position: widget.vehiclePosition!,
+                    position: _displayVehiclePosition!,
                     icon: icons.vehicle,
                     anchor: const Offset(0.5, 0.5),
                     flat: true,
-                    rotation: _vehicleRotation(widget.vehicleHeading ?? 0),
+                    rotation: _vehicleRotation(_displayVehicleHeading ?? 0),
                     zIndexInt: 5,
                   ),
                 if (route != null && icons != null) ...{
@@ -282,7 +378,7 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
                       anchor: const Offset(0.5, 0.5),
                       zIndexInt: 3,
                     ),
-                  if (widget.vehiclePosition == null &&
+                  if (_displayVehiclePosition == null &&
                       widget.vehicleProgress != null)
                     _routeVehicleMarker(
                       route,
@@ -290,7 +386,7 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap> {
                       widget.vehicleProgress!,
                     ),
                   if (widget.showCars &&
-                      widget.vehiclePosition == null &&
+                      _displayVehiclePosition == null &&
                       widget.nearbyDrivers.isNotEmpty)
                     ..._realNearbyVehicleMarkers(
                       widget.nearbyDrivers,

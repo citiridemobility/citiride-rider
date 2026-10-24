@@ -258,12 +258,17 @@ class DriverLocation {
     required this.lng,
     required this.heading,
     this.updatedAt,
+    this.sequence,
   });
 
   final double lat;
   final double lng;
   final double heading;
   final Timestamp? updatedAt;
+  final int? sequence;
+
+  bool get hasValidCoordinates =>
+      lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
 
   factory DriverLocation.fromMap(Map<dynamic, dynamic> data) {
     return DriverLocation(
@@ -277,6 +282,7 @@ class DriverLocation {
           0,
       heading: (data['heading'] as num?)?.toDouble() ?? 0,
       updatedAt: timestampFrom(data['updatedAt']),
+      sequence: (data['sequence'] as num?)?.toInt(),
     );
   }
 }
