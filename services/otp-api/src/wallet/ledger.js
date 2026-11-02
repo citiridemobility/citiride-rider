@@ -613,7 +613,10 @@ export async function ensureFundingAccount(userId, profile = {}) {
   return serializeWallet(aligned);
 }
 
-export async function listTransactions(userId, { limit = 30 } = {}) {
+export async function listTransactions(
+  userId,
+  { limit = 30, createdOnOrAfter = null } = {},
+) {
   try {
     await syncPaystackWithdrawals(userId);
   } catch (error) {
@@ -621,9 +624,17 @@ export async function listTransactions(userId, { limit = 30 } = {}) {
   }
 
   const db = getFirestore();
-  const snap = await db
+  let transactionsQuery = db
     .collection(TXNS)
-    .where('userId', '==', userId)
+    .where('userId', '==', userId);
+  if (createdOnOrAfter instanceof Date) {
+    transactionsQuery = transactionsQuery.where(
+      'createdAt',
+      '>=',
+      createdOnOrAfter,
+    );
+  }
+  const snap = await transactionsQuery
     .limit(Math.min(Math.max(limit, 1) * 3, 150))
     .get();
 

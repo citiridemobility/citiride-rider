@@ -116,7 +116,18 @@ walletRouter.get('/me/transactions', async (req, res) => {
     const auth = await requireAuth(req, res);
     if (!auth) return;
     const limit = Number(req.query.limit || 30);
-    const transactions = await listTransactions(auth.uid, { limit });
+    const fromValue = String(req.query.from || '').trim();
+    const createdOnOrAfter = fromValue ? new Date(fromValue) : null;
+    if (createdOnOrAfter && Number.isNaN(createdOnOrAfter.getTime())) {
+      return res.status(400).json({
+        error: 'invalid_from_date',
+        message: 'The from parameter must be a valid ISO-8601 date.',
+      });
+    }
+    const transactions = await listTransactions(auth.uid, {
+      limit,
+      createdOnOrAfter,
+    });
     return res.json({ ok: true, transactions });
   } catch (error) {
     console.error('wallet transactions failed', error);

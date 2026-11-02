@@ -16,7 +16,7 @@
 - `GET /v1/wallet/status`
 - `POST /v1/wallet/ensure` `{ email, fullName?, phone? }` → creates Paystack customer + dedicated virtual account
 - `GET /v1/wallet/me` → balance + funding account
-- `GET /v1/wallet/me/transactions`
+- `GET /v1/wallet/me/transactions` (`limit` and optional ISO-8601 `from` query parameters)
 - `GET /v1/wallet/banks`
 - `POST /v1/wallet/bank/resolve` `{ accountNumber, bankCode }`
 - `POST /v1/wallet/withdraw` `{ amount, bankCode, bankName, accountNumber, accountName? }`

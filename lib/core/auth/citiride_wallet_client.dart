@@ -173,8 +173,14 @@ class CitirideWalletClient {
 
   Future<List<CitirideWalletTransaction>> fetchTransactions({
     int limit = 30,
+    DateTime? createdOnOrAfter,
   }) async {
-    final body = await _get('/v1/wallet/me/transactions?limit=$limit');
+    final fromQuery = createdOnOrAfter == null
+        ? ''
+        : '&from=${Uri.encodeQueryComponent(createdOnOrAfter.toUtc().toIso8601String())}';
+    final body = await _get(
+      '/v1/wallet/me/transactions?limit=$limit$fromQuery',
+    );
     final list = body['transactions'];
     if (list is! List) return const [];
     return list

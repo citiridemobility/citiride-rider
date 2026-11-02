@@ -48,7 +48,7 @@ class CitirideNotificationsRepository {
   final CitirideSessionStore _sessionStore;
   final CitirideAuthService _authService;
 
-  /// Watches all activity belonging to the rider who is currently signed in.
+  /// Watches this month's activity for the rider who is currently signed in.
   Stream<List<CitirideNotification>> watchCurrentRiderActivities() async* {
     final email = await _sessionStore.signedInEmail();
     final riderId = _authService.riderIdForEmail(email);
@@ -60,11 +60,12 @@ class CitirideNotificationsRepository {
     yield* watchRiderActivities(riderId: riderId);
   }
 
-  /// Combines the rider's Firestore ride history with their wallet ledger.
+  /// Combines this month's Firestore ride activity with the wallet ledger.
   /// Wallet refreshes also recover activities created while the app was closed.
   Stream<List<CitirideNotification>> watchRiderActivities({
     required String riderId,
   }) {
+    final currentMonthStartedAt = _startOfCurrentMonth();
     late final StreamController<List<CitirideNotification>> controller;
     StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? ridesSubscription;
     Timer? walletRefreshTimer;
@@ -79,13 +80,22 @@ class CitirideNotificationsRepository {
       final activities = <CitirideNotification>[
         for (final ride in rides) ..._rideActivities(ride),
         for (final transaction in transactions) _walletActivity(transaction),
-      ]..sort((first, second) => second.occurredAt.compareTo(first.occurredAt));
+      ]
+          .where(
+            (activity) =>
+                !activity.occurredAt.isBefore(currentMonthStartedAt),
+          )
+          .toList()
+        ..sort((first, second) => second.occurredAt.compareTo(first.occurredAt));
       controller.add(activities);
     }
 
     Future<void> refreshWalletActivities() async {
       try {
-        transactions = await _walletClient.fetchTransactions(limit: 50);
+        transactions = await _walletClient.fetchTransactions(
+          limit: 100,
+          createdOnOrAfter: currentMonthStartedAt,
+        );
       } on Object {
         // Ride activity remains available when the wallet service is offline.
       }
@@ -101,6 +111,10 @@ class CitirideNotificationsRepository {
           ridesSubscription = firestore
               .collection(FirestoreCollections.rides)
               .where(FirestoreFields.riderId, isEqualTo: riderId)
+              .where(
+                FirestoreFields.updatedAt,
+                isGreaterThanOrEqualTo: Timestamp.fromDate(currentMonthStartedAt),
+              )
               .snapshots()
               .listen(
                 (snapshot) {
@@ -132,6 +146,11 @@ class CitirideNotificationsRepository {
     );
 
     return controller.stream;
+  }
+
+  static DateTime _startOfCurrentMonth() {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month);
   }
 
   static List<CitirideNotification> _rideActivities(LiveRide ride) {

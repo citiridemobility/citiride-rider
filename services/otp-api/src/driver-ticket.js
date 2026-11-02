@@ -24,6 +24,9 @@ function asMillis(value) {
 function readTicketConfig(data = {}) {
   const feeKobo = Math.round(Number(data.ticketFeeKobo));
   return {
+    // Disabled by default while ticket payments are being tested. Set this to
+    // true in platform_settings/driver_ticket to enforce ticket payments.
+    enabled: data.ticketFeeEnabled === true,
     configured: Number.isFinite(feeKobo) && feeKobo > 0,
     feeKobo: Number.isFinite(feeKobo) && feeKobo > 0 ? feeKobo : 0,
     validForHours: 24,
@@ -33,15 +36,22 @@ function readTicketConfig(data = {}) {
 function serializedTicketStatus({ config, driver = {}, now = Date.now() }) {
   const expiresAtMs = asMillis(driver.ticketExpiresAt);
   const paidAtMs = asMillis(driver.ticketPaidAt);
-  const active = config.configured && expiresAtMs > now;
+  const active = !config.enabled || (config.configured && expiresAtMs > now);
 
   return {
+    enabled: config.enabled,
     configured: config.configured,
     fee: fromKobo(config.feeKobo),
     currency: 'NGN',
     validForHours: config.validForHours,
     active,
-    status: active ? 'active' : expiresAtMs ? 'expired' : 'required',
+    status: !config.enabled
+      ? 'disabled'
+      : active
+        ? 'active'
+        : expiresAtMs
+          ? 'expired'
+          : 'required',
     paidAt: paidAtMs ? new Date(paidAtMs).toISOString() : null,
     expiresAt: expiresAtMs ? new Date(expiresAtMs).toISOString() : null,
     driverStatus: active ? String(driver.status || 'offline') : 'offline',
@@ -129,6 +139,11 @@ export async function purchaseDriverTicket(driverId) {
       ]);
 
     const config = readTicketConfig(configSnap.exists ? configSnap.data() : {});
+    if (!config.enabled) {
+      const error = new Error('Driver ticket fees are temporarily disabled.');
+      error.code = 'ticket_disabled';
+      throw error;
+    }
     if (!config.configured) {
       const error = new Error('The driver ticket fee has not been configured yet.');
       error.code = 'ticket_not_configured';
@@ -295,7 +310,7 @@ export async function setDriverAvailability(driverId, online) {
       driverRef,
       {
         status: online ? 'online' : 'offline',
-        ...(online ? { ticketStatus: 'active' } : {}),
+        ...(online ? { ticketStatus: ticket.status } : {}),
         updatedAt: now,
       },
       { merge: true },
