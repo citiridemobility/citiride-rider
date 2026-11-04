@@ -172,4 +172,48 @@ class RideRepository {
               .toList(growable: false);
         });
   }
+
+  /// Every ride belonging to a rider, including live and completed trips.
+  ///
+  /// Only rides created today or later are included, keeping prior test and
+  /// historical records out of the in-app history. Ordering happens after
+  /// reading the rider's own documents so a recently completed trip moves to
+  /// the top immediately.
+  Stream<List<LiveRide>> watchRidesForRider(String riderId) {
+    return _rides
+        .where(FirestoreFields.riderId, isEqualTo: riderId)
+        .where(
+          FirestoreFields.createdAt,
+          isGreaterThanOrEqualTo: Timestamp.fromDate(_startOfToday()),
+        )
+        .snapshots()
+        .map((snap) {
+          final rides = snap.docs
+              .map((doc) => LiveRide.fromMap(doc.id, doc.data()))
+              .toList(growable: false)
+            ..sort(
+              (first, second) => _rideActivityMillis(
+                second,
+              ).compareTo(_rideActivityMillis(first)),
+            );
+          return rides;
+        });
+  }
+
+  static int _rideActivityMillis(LiveRide ride) {
+    return (ride.completedAt ??
+                ride.cancelledAt ??
+                ride.updatedAt ??
+                ride.tripEndedAt ??
+                ride.tripStartedAt ??
+                ride.acceptedAt ??
+                ride.createdAt)
+            ?.millisecondsSinceEpoch ??
+        0;
+  }
+
+  static DateTime _startOfToday() {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day);
+  }
 }

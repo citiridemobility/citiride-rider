@@ -75,8 +75,28 @@ export async function fetchCustomer(idOrCodeOrEmail) {
   return paystackRequest(`/customer/${encodeURIComponent(idOrCodeOrEmail)}`);
 }
 
+export async function updateCustomer(
+  customerCode,
+  { firstName, lastName, phone } = {},
+) {
+  return paystackRequest(`/customer/${encodeURIComponent(customerCode)}`, {
+    method: 'PUT',
+    body: {
+      first_name: firstName || undefined,
+      last_name: lastName || undefined,
+      phone: phone || undefined,
+    },
+  });
+}
+
 export async function fetchDedicatedAccountById(id) {
   return paystackRequest(`/dedicated_account/${encodeURIComponent(id)}`);
+}
+
+export async function deactivateDedicatedVirtualAccount(id) {
+  return paystackRequest(`/dedicated_account/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
 }
 
 export async function fetchDedicatedAccounts({

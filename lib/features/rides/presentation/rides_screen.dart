@@ -3,10 +3,14 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_colors.dart';
+import '../../../core/auth/citiride_auth_service.dart';
+import '../../../core/session/citiride_session_store.dart';
 import '../../../shared/widgets/cancel_ride_request_sheet.dart';
 import '../../../shared/widgets/citiride_bottom_nav.dart';
 import '../../../shared/widgets/citiride_empty_state.dart';
 import '../../../shared/widgets/compatible_svg_picture.dart';
+import '../../ride/data/ride_repository.dart';
+import '../../ride/domain/live_ride.dart';
 import '../domain/ride_history.dart';
 
 enum _RidesTab { upcoming, past }
@@ -22,11 +26,31 @@ class RidesScreen extends StatefulWidget {
 
 class _RidesScreenState extends State<RidesScreen> {
   late _RidesTab _tab;
+  final _rideRepository = RideRepository();
+  final _sessionStore = const CitirideSessionStore();
+  final _authService = CitirideAuthService();
+  Stream<List<LiveRide>>? _ridesStream;
+  var _resolvingRider = true;
 
   @override
   void initState() {
     super.initState();
     _tab = widget.initialTab == 'past' ? _RidesTab.past : _RidesTab.upcoming;
+    _listenForRides();
+  }
+
+  Future<void> _listenForRides() async {
+    final email = await _sessionStore.signedInEmail();
+    final riderId = _authService.riderIdForEmail(email);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _resolvingRider = false;
+      _ridesStream = riderId == null || riderId.isEmpty
+          ? null
+          : _rideRepository.watchRidesForRider(riderId);
+    });
   }
 
   Future<void> _cancelRide(RideHistoryItem ride) async {
@@ -42,11 +66,24 @@ class _RidesScreenState extends State<RidesScreen> {
       return;
     }
 
-    final selectRideUri = Uri(
-      path: '/select-ride',
-      queryParameters: {'pickup': ride.pickup, 'destination': ride.destination},
-    );
-    context.go(selectRideUri.toString());
+    try {
+      await _rideRepository.cancelRide(ride.id);
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ride request cancelled.')),
+      );
+    } on Object {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to cancel this ride. Please try again.'),
+        ),
+      );
+    }
   }
 
   void _openRideDetails(RideHistoryItem ride) {
@@ -55,14 +92,12 @@ class _RidesScreenState extends State<RidesScreen> {
         path: '/ride-details',
         queryParameters: {'rideId': ride.id},
       ).toString(),
+      extra: ride,
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final rides = _tab == _RidesTab.upcoming
-        ? upcomingRideHistoryItems
-        : pastRideHistoryItems;
     final emptyTitle = _tab == _RidesTab.upcoming
         ? 'No upcoming rides'
         : 'No past rides';
@@ -123,30 +158,10 @@ class _RidesScreenState extends State<RidesScreen> {
                       ),
                       const SizedBox(height: 16),
                       Expanded(
-                        child: rides.isEmpty
-                            ? CitirideEmptyState(
-                                icon: Icons.route_outlined,
-                                title: emptyTitle,
-                                subtitle: emptySubtitle,
-                              )
-                            : ListView.separated(
-                                physics: const BouncingScrollPhysics(),
-                                padding: EdgeInsets.zero,
-                                itemCount: rides.length,
-                                separatorBuilder: (context, index) {
-                                  return const SizedBox(height: 12);
-                                },
-                                itemBuilder: (context, index) {
-                                  final ride = rides[index];
-                                  return _RideHistoryCard(
-                                    ride: ride,
-                                    showCancel: _tab == _RidesTab.upcoming,
-                                    showStatus: _tab == _RidesTab.past,
-                                    onTap: () => _openRideDetails(ride),
-                                    onCancel: () => _cancelRide(ride),
-                                  );
-                                },
-                              ),
+                        child: _buildRidesList(
+                          emptyTitle: emptyTitle,
+                          emptySubtitle: emptySubtitle,
+                        ),
                       ),
                     ],
                   ),
@@ -164,6 +179,76 @@ class _RidesScreenState extends State<RidesScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildRidesList({
+    required String emptyTitle,
+    required String emptySubtitle,
+  }) {
+    if (_resolvingRider) {
+      return const Center(
+        child: CircularProgressIndicator(color: AppColors.citirideYellow),
+      );
+    }
+
+    final stream = _ridesStream;
+    if (stream == null) {
+      return CitirideEmptyState(
+        icon: Icons.route_outlined,
+        title: emptyTitle,
+        subtitle: emptySubtitle,
+      );
+    }
+
+    return StreamBuilder<List<LiveRide>>(
+      stream: stream,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
+          return const Center(
+            child: CircularProgressIndicator(color: AppColors.citirideYellow),
+          );
+        }
+
+        final allRides = (snapshot.data ?? const <LiveRide>[])
+            .map(RideHistoryItem.fromLiveRide)
+            .toList(growable: false);
+        final rides = _tab == _RidesTab.upcoming
+            ? allRides
+                .where((ride) => ride.status == RideHistoryStatus.upcoming)
+                .toList(growable: false)
+            : allRides
+                .where((ride) => ride.status != RideHistoryStatus.upcoming)
+                .toList(growable: false);
+
+        if (rides.isEmpty) {
+          return CitirideEmptyState(
+            icon: Icons.route_outlined,
+            title: emptyTitle,
+            subtitle: snapshot.hasError
+                ? 'Unable to load your rides right now. Please try again.'
+                : emptySubtitle,
+          );
+        }
+
+        return ListView.separated(
+          physics: const BouncingScrollPhysics(),
+          padding: EdgeInsets.zero,
+          itemCount: rides.length,
+          separatorBuilder: (context, index) => const SizedBox(height: 12),
+          itemBuilder: (context, index) {
+            final ride = rides[index];
+            return _RideHistoryCard(
+              ride: ride,
+              showCancel: _tab == _RidesTab.upcoming && ride.canCancel,
+              showStatus: _tab == _RidesTab.past,
+              onTap: () => _openRideDetails(ride),
+              onCancel: () => _cancelRide(ride),
+            );
+          },
+        );
+      },
     );
   }
 }

@@ -335,8 +335,11 @@ abstract final class AppRouter {
           path: '/ride-details',
           name: 'ride-details',
           builder: (context, state) {
+            final selectedRide = state.extra;
             return RideDetailsScreen(
-              ride: rideHistoryItemById(state.uri.queryParameters['rideId']),
+              ride: selectedRide is RideHistoryItem
+                  ? selectedRide
+                  : rideHistoryItemById(state.uri.queryParameters['rideId']),
             );
           },
         ),

@@ -19,6 +19,7 @@ import {
   handleTransferEvent,
   listTransactions,
   payRideFare,
+  regenerateFundingAccount,
   requeryWalletFunding,
   requestWithdrawal,
   simulateTestDeposit,
@@ -277,6 +278,31 @@ walletRouter.post('/funding/requery', async (req, res) => {
     return res.status(400).json({
       error: 'funding_requery_failed',
       message: error.message || 'Unable to requery funding account',
+    });
+  }
+});
+
+walletRouter.post('/funding/regenerate', async (req, res) => {
+  try {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+
+    const email = String(req.body?.email || auth.email || '')
+      .trim()
+      .toLowerCase();
+    const fullName = String(req.body?.fullName || '').trim();
+    const phone = String(req.body?.phone || '').trim();
+    const wallet = await regenerateFundingAccount(auth.uid, {
+      email,
+      fullName,
+      phone,
+    });
+    return res.json({ ok: true, wallet });
+  } catch (error) {
+    console.error('wallet funding regeneration failed', error);
+    return res.status(400).json({
+      error: 'funding_regenerate_failed',
+      message: error.message || 'Unable to regenerate funding account',
     });
   }
 });

@@ -1,6 +1,8 @@
 import {
   assignDedicatedVirtualAccount,
+  createDedicatedVirtualAccount,
   createTransferRecipient,
+  deactivateDedicatedVirtualAccount,
   ensureCustomer,
   fetchCustomer,
   fetchDedicatedAccountById,
@@ -14,6 +16,7 @@ import {
   paystackMode,
   requeryDedicatedAccount,
   resolveAccountNumber,
+  updateCustomer,
   verifyTransaction,
 } from '../paystack/client.js';
 import {
@@ -544,19 +547,85 @@ export async function ensureFundingAccount(userId, profile = {}) {
   const db = getFirestore();
   const ref = db.collection(WALLETS).doc(userId);
   let wallet = await getOrCreateWallet(userId, profile);
-  if (!fundingAccountNeedsAssignment(wallet)) {
-    return wallet;
-  }
 
   const email = (profile.email || wallet.email || '').trim().toLowerCase();
   if (!email) {
     throw new Error('Email is required to create a funding account');
   }
 
+  const suppliedFullName = String(profile.fullName || '').trim();
   const { firstName, lastName } = splitName(
-    profile.fullName || wallet.fullName || email.split('@')[0],
+    suppliedFullName || wallet.fullName || email.split('@')[0],
   );
   const phone = profile.phone || wallet.phone || undefined;
+
+  if (!fundingAccountNeedsAssignment(wallet)) {
+    // Correct customers created by older app versions that only supplied an
+    // email. This is intentionally non-destructive: it updates Paystack's
+    // customer record and refreshes the stored DVA details without replacing
+    // an existing bank account.
+    let customerCode = wallet.paystackCustomerCode || null;
+    let customerId = wallet.paystackCustomerId || null;
+    let fundingAccount = wallet.fundingAccount;
+
+    if (suppliedFullName || profile.phone) {
+      try {
+        if (!customerCode) {
+          const customer = await fetchCustomer(email);
+          customerCode = customer.data?.customer_code || customerCode;
+          customerId = customer.data?.id || customerId;
+        }
+
+        if (customerCode) {
+          const customer = await updateCustomer(customerCode, {
+            firstName: suppliedFullName ? firstName : undefined,
+            lastName: suppliedFullName ? lastName : undefined,
+            phone,
+          });
+          customerCode = customer.data?.customer_code || customerCode;
+          customerId = customer.data?.id || customerId;
+        }
+      } catch (error) {
+        // A validated Paystack customer may reject a name change. The DVA
+        // remains usable and we still retain the profile locally.
+        console.warn('Paystack customer profile refresh failed', error.message || error);
+      }
+    }
+
+    if (fundingAccount?.dedicatedAccountId) {
+      try {
+        const dedicated = await fetchDedicatedAccountById(
+          fundingAccount.dedicatedAccountId,
+        );
+        const account = dedicated.data || {};
+        fundingAccount = {
+          ...fundingAccount,
+          accountName: account.account_name || fundingAccount.accountName || null,
+          accountNumber: account.account_number || fundingAccount.accountNumber || null,
+          bankName: account.bank?.name || fundingAccount.bankName || null,
+          bankSlug: account.bank?.slug || fundingAccount.bankSlug || null,
+        };
+      } catch (error) {
+        console.warn('Dedicated account refresh failed', error.message || error);
+      }
+    }
+
+    await ref.set(
+      {
+        email,
+        fullName: suppliedFullName || wallet.fullName || null,
+        phone: phone || null,
+        ...(customerCode ? { paystackCustomerCode: customerCode } : {}),
+        ...(customerId ? { paystackCustomerId: customerId } : {}),
+        ...(fundingAccount ? { fundingAccount } : {}),
+        updatedAt: new Date(),
+      },
+      { merge: true },
+    );
+
+    const refreshed = await ref.get();
+    return serializeWallet(refreshed);
+  }
 
   const customer = await ensureCustomer({
     email,
@@ -611,6 +680,111 @@ export async function ensureFundingAccount(userId, profile = {}) {
   const refreshed = await ref.get();
   const aligned = await alignWalletLedgerMode(ref, refreshed);
   return serializeWallet(aligned);
+}
+
+/**
+ * Replaces a DVA whose original Paystack account name was created from stale
+ * customer details. This intentionally changes the account number, so it is
+ * only exposed behind an explicit confirmation in the driver app.
+ */
+export async function regenerateFundingAccount(userId, profile = {}) {
+  const db = getFirestore();
+  const ref = db.collection(WALLETS).doc(userId);
+  const wallet = await getOrCreateWallet(userId, profile);
+  const email = (profile.email || wallet.email || '').trim().toLowerCase();
+  const fullName = String(profile.fullName || wallet.fullName || '').trim();
+  const phone = String(profile.phone || wallet.phone || '').trim();
+
+  if (!email) {
+    throw new Error('Email is required to regenerate a funding account');
+  }
+  if (!fullName) {
+    throw new Error('Save your full name in your profile before regenerating the account');
+  }
+  if (!phone) {
+    throw new Error('Save your phone number in your profile before regenerating the account');
+  }
+
+  const { firstName, lastName } = splitName(fullName);
+  let customer;
+  try {
+    customer = (await fetchCustomer(wallet.paystackCustomerCode || email)).data;
+    const customerCode = customer?.customer_code || customer?.id;
+    if (customerCode) {
+      customer = (
+        await updateCustomer(customerCode, { firstName, lastName, phone })
+      ).data;
+    }
+  } catch {
+    customer = (await ensureCustomer({ email, firstName, lastName, phone }));
+  }
+
+  const customerCode = customer?.customer_code || customer?.id;
+  if (!customerCode) {
+    throw new Error('Unable to prepare your Paystack customer profile');
+  }
+
+  let previousDvaId = wallet.fundingAccount?.dedicatedAccountId || null;
+  if (!previousDvaId) {
+    try {
+      const existing = await listDedicatedAccounts({
+        customerCode: wallet.paystackCustomerId || customerCode,
+      });
+      const account = (Array.isArray(existing.data) ? existing.data : []).find(
+        (row) => row && row.active !== false && row.account_number,
+      );
+      previousDvaId = account?.id || null;
+    } catch (error) {
+      console.warn('Existing dedicated account lookup failed', error.message || error);
+    }
+  }
+
+  if (previousDvaId) {
+    await deactivateDedicatedVirtualAccount(previousDvaId);
+    // Never show an inactive DVA if assignment of the new account is delayed.
+    await ref.set(
+      {
+        fundingAccount: null,
+        updatedAt: new Date(),
+      },
+      { merge: true },
+    );
+  }
+
+  const dva = await createDedicatedVirtualAccount({
+    customerCode,
+    firstName,
+    lastName,
+    phone,
+  });
+  const account = dva.data || {};
+  const fundingAccount = {
+    accountName: account.account_name || null,
+    accountNumber: account.account_number || null,
+    bankName: account.bank?.name || null,
+    bankSlug: account.bank?.slug || null,
+    currency: account.currency || 'NGN',
+    provider: 'paystack',
+    paystackMode: paystackMode(),
+    dedicatedAccountId: account.id || null,
+    assignedAt: new Date().toISOString(),
+  };
+
+  await ref.set(
+    {
+      email,
+      fullName,
+      phone,
+      paystackCustomerCode: customer.customer_code || customerCode,
+      paystackCustomerId: customer.id || null,
+      fundingAccount,
+      paystackLedgerMode: paystackMode(),
+      updatedAt: new Date(),
+    },
+    { merge: true },
+  );
+
+  return serializeWallet(await ref.get());
 }
 
 export async function listTransactions(
