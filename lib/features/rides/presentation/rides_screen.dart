@@ -11,9 +11,10 @@ import '../../../shared/widgets/citiride_empty_state.dart';
 import '../../../shared/widgets/compatible_svg_picture.dart';
 import '../../ride/data/ride_repository.dart';
 import '../../ride/domain/live_ride.dart';
+import '../../ride/presentation/ride_trip_session.dart';
 import '../domain/ride_history.dart';
 
-enum _RidesTab { upcoming, past }
+enum _RidesTab { ongoing, past }
 
 class RidesScreen extends StatefulWidget {
   const RidesScreen({super.key, this.initialTab = 'upcoming'});
@@ -35,7 +36,7 @@ class _RidesScreenState extends State<RidesScreen> {
   @override
   void initState() {
     super.initState();
-    _tab = widget.initialTab == 'past' ? _RidesTab.past : _RidesTab.upcoming;
+    _tab = widget.initialTab == 'past' ? _RidesTab.past : _RidesTab.ongoing;
     _listenForRides();
   }
 
@@ -87,6 +88,14 @@ class _RidesScreenState extends State<RidesScreen> {
   }
 
   void _openRideDetails(RideHistoryItem ride) {
+    final liveRide = ride.liveRide;
+    final activeRideLocation = liveRide == null
+        ? null
+        : routeLocationForActiveRide(liveRide);
+    if (activeRideLocation != null) {
+      context.go(activeRideLocation);
+      return;
+    }
     context.push(
       Uri(
         path: '/ride-details',
@@ -98,11 +107,11 @@ class _RidesScreenState extends State<RidesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final emptyTitle = _tab == _RidesTab.upcoming
-        ? 'No upcoming rides'
+    final emptyTitle = _tab == _RidesTab.ongoing
+        ? 'No ongoing rides'
         : 'No past rides';
-    final emptySubtitle = _tab == _RidesTab.upcoming
-        ? 'When you book a trip, it will appear here until pickup.'
+    final emptySubtitle = _tab == _RidesTab.ongoing
+        ? 'Active and payment-pending trips will appear here.'
         : 'Completed and cancelled trips will show up here.';
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -140,10 +149,10 @@ class _RidesScreenState extends State<RidesScreen> {
                       Row(
                         children: [
                           _RideTabPill(
-                            label: 'Upcoming Rides',
-                            active: _tab == _RidesTab.upcoming,
+                            label: 'Ongoing Rides',
+                            active: _tab == _RidesTab.ongoing,
                             onTap: () => setState(() {
-                              _tab = _RidesTab.upcoming;
+                              _tab = _RidesTab.ongoing;
                             }),
                           ),
                           const SizedBox(width: 7),
@@ -214,12 +223,12 @@ class _RidesScreenState extends State<RidesScreen> {
         final allRides = (snapshot.data ?? const <LiveRide>[])
             .map(RideHistoryItem.fromLiveRide)
             .toList(growable: false);
-        final rides = _tab == _RidesTab.upcoming
+        final rides = _tab == _RidesTab.ongoing
             ? allRides
-                .where((ride) => ride.status == RideHistoryStatus.upcoming)
+                .where((ride) => ride.status == RideHistoryStatus.ongoing)
                 .toList(growable: false)
             : allRides
-                .where((ride) => ride.status != RideHistoryStatus.upcoming)
+                .where((ride) => ride.status != RideHistoryStatus.ongoing)
                 .toList(growable: false);
 
         if (rides.isEmpty) {
@@ -241,7 +250,7 @@ class _RidesScreenState extends State<RidesScreen> {
             final ride = rides[index];
             return _RideHistoryCard(
               ride: ride,
-              showCancel: _tab == _RidesTab.upcoming && ride.canCancel,
+              showCancel: _tab == _RidesTab.ongoing && ride.canCancel,
               showStatus: _tab == _RidesTab.past,
               onTap: () => _openRideDetails(ride),
               onCancel: () => _cancelRide(ride),

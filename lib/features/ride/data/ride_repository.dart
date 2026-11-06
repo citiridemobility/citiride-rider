@@ -173,6 +173,46 @@ class RideRepository {
         });
   }
 
+  /// Returns the rider's most advanced non-terminal trip so the app can
+  /// restore the correct live ride screen after an app restart.
+  Future<LiveRide?> findActiveRideForRider(String riderId) async {
+    final cleanRiderId = riderId.trim();
+    if (cleanRiderId.isEmpty) {
+      return null;
+    }
+
+    final snapshot = await _rides
+        .where(FirestoreFields.riderId, isEqualTo: cleanRiderId)
+        .get();
+    final activeRides = snapshot.docs
+        .map((doc) => LiveRide.fromMap(doc.id, doc.data()))
+        .where((ride) => !ride.status.isTerminal)
+        .toList(growable: false)
+      ..sort((first, second) {
+        final byStatus = _activeRidePriority(
+          second.status,
+        ).compareTo(_activeRidePriority(first.status));
+        if (byStatus != 0) {
+          return byStatus;
+        }
+        return _rideActivityMillis(second).compareTo(_rideActivityMillis(first));
+      });
+
+    return activeRides.isEmpty ? null : activeRides.first;
+  }
+
+  static int _activeRidePriority(RideStatus status) {
+    return switch (status) {
+      RideStatus.confirmFare => 6,
+      RideStatus.inProgress => 5,
+      RideStatus.waiting => 4,
+      RideStatus.arriving => 3,
+      RideStatus.accepted => 2,
+      RideStatus.requested => 1,
+      RideStatus.completed || RideStatus.cancelled => 0,
+    };
+  }
+
   /// Every ride belonging to a rider, including live and completed trips.
   ///
   /// Only rides created today or later are included, keeping prior test and

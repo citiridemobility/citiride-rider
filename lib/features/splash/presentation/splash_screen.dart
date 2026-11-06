@@ -10,6 +10,8 @@ import '../../../core/firebase/firebase_bootstrap.dart';
 import '../../../core/session/citiride_session_store.dart';
 import '../../../shared/widgets/compatible_svg_picture.dart';
 import '../../profile/domain/rider_profile.dart';
+import '../../ride/data/ride_repository.dart';
+import '../../ride/presentation/ride_trip_session.dart';
 import '../../wallet/presentation/wallet_enrollment_store.dart';
 import '../../wallet/presentation/wallet_transaction_pin_store.dart';
 
@@ -30,12 +32,19 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _completeStartup() async {
-    unawaited(FirebaseBootstrap.initialize());
+    final firebaseInitialization = FirebaseBootstrap.initialize();
 
     // Wait for local persistence before routing so wallet/onboarding state
     // is ready when the first real screen opens.
     await Future.wait<void>([
       Future<void>.delayed(_minimumSplashDuration),
+      firebaseInitialization
+          .timeout(const Duration(seconds: 5), onTimeout: () {
+            return const FirebaseStatus.unconfigured(
+              'Firebase initialization timed out.',
+            );
+          })
+          .then<void>((_) {}),
       WalletEnrollmentStore.instance.load().timeout(
         const Duration(seconds: 2),
         onTimeout: () {},
@@ -72,6 +81,22 @@ class _SplashScreenState extends State<SplashScreen> {
         }
         if (!mounted) {
           return;
+        }
+        final riderId = CitirideAuthService().riderIdForEmail(email);
+        if (riderId != null && riderId.isNotEmpty) {
+          final activeRide = await RideRepository()
+              .findActiveRideForRider(riderId)
+              .timeout(const Duration(seconds: 5), onTimeout: () => null);
+          final activeRideLocation = activeRide == null
+              ? null
+              : routeLocationForActiveRide(activeRide);
+          if (!mounted) {
+            return;
+          }
+          if (activeRideLocation != null) {
+            context.go(activeRideLocation);
+            return;
+          }
         }
         context.go('/home');
         return;

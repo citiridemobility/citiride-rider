@@ -1,6 +1,6 @@
 import '../../ride/domain/live_ride.dart';
 
-enum RideHistoryStatus { upcoming, completed, cancelled }
+enum RideHistoryStatus { ongoing, completed, cancelled }
 
 class RideHistoryItem {
   const RideHistoryItem({
@@ -13,6 +13,7 @@ class RideHistoryItem {
     required this.amount,
     required this.paymentMethod,
     this.canCancel = false,
+    this.liveRide,
   });
 
   final String id;
@@ -24,6 +25,7 @@ class RideHistoryItem {
   final String amount;
   final String paymentMethod;
   final bool canCancel;
+  final LiveRide? liveRide;
 
   factory RideHistoryItem.fromLiveRide(LiveRide ride) {
     final occurredAt =
@@ -42,7 +44,7 @@ class RideHistoryItem {
       status: switch (ride.status) {
         RideStatus.completed => RideHistoryStatus.completed,
         RideStatus.cancelled => RideHistoryStatus.cancelled,
-        _ => RideHistoryStatus.upcoming,
+        _ => RideHistoryStatus.ongoing,
       },
       dateLine: _shortDate(date),
       detailDate: _detailDate(date),
@@ -57,12 +59,13 @@ class RideHistoryItem {
         RideStatus.waiting => true,
         _ => false,
       },
+      liveRide: ride,
     );
   }
 
   String get detailTitle {
     return switch (status) {
-      RideHistoryStatus.upcoming => 'Upcoming Ride',
+      RideHistoryStatus.ongoing => 'Ongoing Ride',
       RideHistoryStatus.completed => 'Ride Completed',
       RideHistoryStatus.cancelled => 'Ride Cancelled',
     };
@@ -70,7 +73,7 @@ class RideHistoryItem {
 
   String get statusLabel {
     return switch (status) {
-      RideHistoryStatus.upcoming => 'Upcoming',
+      RideHistoryStatus.ongoing => 'Ongoing',
       RideHistoryStatus.completed => 'Completed',
       RideHistoryStatus.cancelled => 'Cancelled',
     };
@@ -146,14 +149,14 @@ RideHistoryItem? rideHistoryItemById(String? id) {
   return null;
 }
 
-List<RideHistoryItem> get upcomingRideHistoryItems {
+List<RideHistoryItem> get ongoingRideHistoryItems {
   return rideHistoryItems
-      .where((ride) => ride.status == RideHistoryStatus.upcoming)
+      .where((ride) => ride.status == RideHistoryStatus.ongoing)
       .toList(growable: false);
 }
 
 List<RideHistoryItem> get pastRideHistoryItems {
   return rideHistoryItems
-      .where((ride) => ride.status != RideHistoryStatus.upcoming)
+      .where((ride) => ride.status != RideHistoryStatus.ongoing)
       .toList(growable: false);
 }

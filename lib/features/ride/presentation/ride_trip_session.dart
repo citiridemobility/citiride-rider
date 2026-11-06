@@ -202,6 +202,43 @@ String? routePathForRideStatus(
   };
 }
 
+/// Builds a complete deep-link for an unfinished ride. It is used when a
+/// rider returns to the app, so navigation is restored from Firestore instead
+/// of relying on the route that happened to be open before the app closed.
+String? routeLocationForActiveRide(LiveRide ride) {
+  if (ride.status.isTerminal) {
+    return null;
+  }
+
+  final path = routePathForRideStatus(
+    ride.status,
+    paymentPaid: ride.isPaid,
+  );
+  if (path == null) {
+    return null;
+  }
+
+  final fare = ride.fare.finalFare ?? ride.fare.estimated;
+  final params = <String, String>{
+    'rideId': ride.id,
+    'ride': ride.rideType,
+    'payment': ride.paymentMethod,
+    'pickup': ride.pickup.address,
+    'destination': ride.destination.address,
+    'pickupLat': ride.pickup.lat.toStringAsFixed(7),
+    'pickupLng': ride.pickup.lng.toStringAsFixed(7),
+    'destinationLat': ride.destination.lat.toStringAsFixed(7),
+    'destinationLng': ride.destination.lng.toStringAsFixed(7),
+    'fare': fare.round().toString(),
+  };
+  final driverId = ride.driverId?.trim();
+  if (driverId != null && driverId.isNotEmpty) {
+    params['driverId'] = driverId;
+  }
+
+  return Uri(path: path, queryParameters: params).toString();
+}
+
 int rideStatusRank(RideStatus status) {
   return switch (status) {
     RideStatus.requested => 0,
