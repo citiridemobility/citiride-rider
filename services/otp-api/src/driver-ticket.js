@@ -12,7 +12,8 @@ const WALLETS = 'wallets';
 const TXNS = 'wallet_transactions';
 const SETTINGS = 'platform_settings';
 const DRIVER_TICKET_SETTING_ID = 'driver_ticket';
-const TICKET_DURATION_MS = 24 * 60 * 60 * 1000;
+const PAID_TICKET_DURATION_MS = 24 * 60 * 60 * 1000;
+const PAYMENT_GRACE_PERIOD_MS = 3 * 60 * 60 * 1000;
 
 function asMillis(value) {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -30,13 +31,48 @@ function readTicketConfig(data = {}) {
     configured: Number.isFinite(feeKobo) && feeKobo > 0,
     feeKobo: Number.isFinite(feeKobo) && feeKobo > 0 ? feeKobo : 0,
     validForHours: 24,
+    paymentGracePeriodHours: 3,
   };
 }
 
 function serializedTicketStatus({ config, driver = {}, now = Date.now() }) {
   const expiresAtMs = asMillis(driver.ticketExpiresAt);
   const paidAtMs = asMillis(driver.ticketPaidAt);
-  const active = !config.enabled || (config.configured && expiresAtMs > now);
+  const graceStartedAtMs = asMillis(driver.ticketPaymentGraceStartedAt);
+  const graceExpiresAtMs = asMillis(driver.ticketPaymentGraceExpiresAt);
+  const hasPaidTicket = config.configured && expiresAtMs > now;
+  const graceActive =
+    config.enabled &&
+    config.configured &&
+    !hasPaidTicket &&
+    graceExpiresAtMs > now;
+  const paidTicketExpired =
+    config.enabled && config.configured && !hasPaidTicket && expiresAtMs > 0;
+  const graceExpired =
+    config.enabled &&
+    config.configured &&
+    !hasPaidTicket &&
+    graceStartedAtMs > 0 &&
+    graceExpiresAtMs <= now;
+  const requiresPayment = paidTicketExpired || graceExpired;
+  const canGoOnline =
+    !config.enabled ||
+    hasPaidTicket ||
+    graceActive ||
+    (config.configured && !requiresPayment && !graceStartedAtMs);
+  const canReceiveRequests = !config.enabled || hasPaidTicket || graceActive;
+  const active = !config.enabled || hasPaidTicket;
+  const status = !config.enabled
+    ? 'disabled'
+    : hasPaidTicket
+      ? 'active'
+      : graceActive
+        ? 'grace_period'
+        : paidTicketExpired
+          ? 'expired'
+          : graceExpired
+            ? 'payment_required'
+            : 'required';
 
   return {
     enabled: config.enabled,
@@ -44,21 +80,27 @@ function serializedTicketStatus({ config, driver = {}, now = Date.now() }) {
     fee: fromKobo(config.feeKobo),
     currency: 'NGN',
     validForHours: config.validForHours,
+    paymentGracePeriodHours: config.paymentGracePeriodHours,
     active,
-    status: !config.enabled
-      ? 'disabled'
-      : active
-        ? 'active'
-        : expiresAtMs
-          ? 'expired'
-          : 'required',
+    canGoOnline,
+    canReceiveRequests,
+    requiresPayment,
+    graceActive,
+    status,
     paidAt: paidAtMs ? new Date(paidAtMs).toISOString() : null,
     expiresAt: expiresAtMs ? new Date(expiresAtMs).toISOString() : null,
-    driverStatus: active ? String(driver.status || 'offline') : 'offline',
+    paymentGraceStartedAt: graceStartedAtMs
+      ? new Date(graceStartedAtMs).toISOString()
+      : null,
+    paymentDueAt: graceExpiresAtMs
+      ? new Date(graceExpiresAtMs).toISOString()
+      : null,
+    driverStatus:
+      driver.status === 'online' && canReceiveRequests ? 'online' : 'offline',
   };
 }
 
-function ticketRequiredError(message = 'Pay the 24-hour driver ticket to go online.') {
+function ticketRequiredError(message = 'Pay the driver ticket fee to go online.') {
   const error = new Error(message);
   error.code = 'ticket_required';
   return error;
@@ -90,7 +132,7 @@ export async function getDriverTicketStatus(driverId) {
     const config = readTicketConfig(configSnap.exists ? configSnap.data() : {});
     const status = serializedTicketStatus({ config, driver });
 
-    if (!status.active && driver.status === 'online') {
+    if (status.requiresPayment && driver.status === 'online') {
       tx.set(
         driverRef,
         {
@@ -108,9 +150,10 @@ export async function getDriverTicketStatus(driverId) {
 }
 
 /**
- * Debits the driver's CitiRide wallet and creates one non-renewable 24-hour
- * ticket. The fee is read inside the transaction so an admin fee change can
- * never result in a stale price being charged.
+ * Debits the driver's CitiRide wallet and creates a 24-hour ticket. The fee
+ * is read inside the transaction so an admin fee change can never result in a
+ * stale price being charged. A driver can pay during their three-hour online
+ * grace window without being taken offline.
  */
 export async function purchaseDriverTicket(driverId) {
   const db = getFirestore();
@@ -184,7 +227,8 @@ export async function purchaseDriverTicket(driverId) {
       throw error;
     }
 
-    const expiresAt = new Date(now.getTime() + TICKET_DURATION_MS);
+    const expiresAt = new Date(now.getTime() + PAID_TICKET_DURATION_MS);
+    const keepDriverOnline = driver.status === 'online';
     const ticketMetadata = {
       ticketReference: reference,
       ticketFeeKobo: config.feeKobo,
@@ -241,13 +285,15 @@ export async function purchaseDriverTicket(driverId) {
     tx.set(
       driverRef,
       {
-        status: 'offline',
+        status: keepDriverOnline ? 'online' : 'offline',
         ticketStatus: 'active',
         ticketReference: reference,
         ticketFeeKobo: config.feeKobo,
         ticketPaidAt: now,
         ticketExpiresAt: expiresAt,
         ticketExpiredAt: null,
+        ticketPaymentGraceStartedAt: null,
+        ticketPaymentGraceExpiresAt: null,
         updatedAt: now,
       },
       { merge: true },
@@ -257,9 +303,11 @@ export async function purchaseDriverTicket(driverId) {
       config,
       driver: {
         ...driver,
-        status: 'offline',
+        status: keepDriverOnline ? 'online' : 'offline',
         ticketPaidAt: now,
         ticketExpiresAt: expiresAt,
+        ticketPaymentGraceStartedAt: null,
+        ticketPaymentGraceExpiresAt: null,
       },
       now: now.getTime(),
     });
@@ -269,8 +317,9 @@ export async function purchaseDriverTicket(driverId) {
 }
 
 /**
- * The only API that can take a driver online. A ticket is checked inside a
- * Firestore transaction so a stale client cannot become eligible for dispatch.
+ * The only API that can take a driver online. The first unpaid online session
+ * starts a non-resettable three-hour payment window. Once it passes, the
+ * driver must pay before going online again.
  */
 export async function setDriverAvailability(driverId, online) {
   const db = getFirestore();
@@ -285,41 +334,83 @@ export async function setDriverAvailability(driverId, online) {
     const driver = driverSnap.exists ? driverSnap.data() || {} : {};
     requireDriverRecord(driverSnap);
     const config = readTicketConfig(configSnap.exists ? configSnap.data() : {});
-    const ticket = serializedTicketStatus({ config, driver });
+    const now = new Date();
+    const ticket = serializedTicketStatus({
+      config,
+      driver,
+      now: now.getTime(),
+    });
 
-    if (online && !ticket.active) {
+    if (online && config.enabled && !config.configured) {
+      tx.set(
+        driverRef,
+        {
+          status: 'offline',
+          ticketStatus: 'required',
+          updatedAt: now,
+        },
+        { merge: true },
+      );
+      throw ticketRequiredError(
+        'The driver ticket fee has not been configured yet.',
+      );
+    }
+
+    if (online && ticket.requiresPayment) {
       tx.set(
         driverRef,
         {
           status: 'offline',
           ticketStatus: ticket.status,
-          ticketExpiredAt: ticket.status === 'expired' ? new Date() : null,
-          updatedAt: new Date(),
+          ticketExpiredAt: now,
+          updatedAt: now,
         },
         { merge: true },
       );
       throw ticketRequiredError(
-        ticket.configured
+        ticket.status === 'expired'
           ? 'Your 24-hour driver ticket has expired. Pay the ticket fee to go online.'
-          : 'The driver ticket fee has not been configured yet.',
+          : 'Your 3-hour ticket payment window has ended. Pay the ticket fee to go online.',
       );
     }
 
-    const now = new Date();
+    let nextDriver = {
+      ...driver,
+      status: online ? 'online' : 'offline',
+    };
+    const availabilityUpdate = {
+      status: nextDriver.status,
+      updatedAt: now,
+    };
+
+    if (online && config.enabled && !ticket.active && !ticket.graceActive) {
+      const paymentGraceStartedAt = now;
+      const paymentGraceExpiresAt = new Date(
+        now.getTime() + PAYMENT_GRACE_PERIOD_MS,
+      );
+      nextDriver = {
+        ...nextDriver,
+        ticketPaymentGraceStartedAt: paymentGraceStartedAt,
+        ticketPaymentGraceExpiresAt: paymentGraceExpiresAt,
+      };
+      availabilityUpdate.ticketPaymentGraceStartedAt = paymentGraceStartedAt;
+      availabilityUpdate.ticketPaymentGraceExpiresAt = paymentGraceExpiresAt;
+    }
+
+    const nextTicket = serializedTicketStatus({
+      config,
+      driver: nextDriver,
+      now: now.getTime(),
+    });
+    availabilityUpdate.ticketStatus = nextTicket.status;
+
     tx.set(
       driverRef,
-      {
-        status: online ? 'online' : 'offline',
-        ...(online ? { ticketStatus: ticket.status } : {}),
-        updatedAt: now,
-      },
+      availabilityUpdate,
       { merge: true },
     );
 
-    return {
-      ...ticket,
-      driverStatus: online ? 'online' : 'offline',
-    };
+    return nextTicket;
   });
 }
 

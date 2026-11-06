@@ -1,14 +1,14 @@
 {
-	"folders": [
-		{
-			"path": "../../../.."
-		},
-		{
-			"path": "../../../../../CitiRide-Driver"
-		},
-		{
-			"path": "../../../../../citiride-admin"
-		}
-	],
-	"settings": {}
+  "folders": [
+    {
+      "path": "../../../..",
+    },
+    {
+      "path": "../../../../../CitiRide-Driver",
+    },
+    {
+      "path": "../../../../../citiride-admin",
+    },
+  ],
+  "settings": {},
 }
