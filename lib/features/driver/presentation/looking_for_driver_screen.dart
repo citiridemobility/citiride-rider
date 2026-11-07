@@ -3039,7 +3039,10 @@ class _DriverFlowMapState extends State<_DriverFlowMap> {
   int _routeGeneration = 0;
   Timer? _freshnessTimer;
   Timer? _routeRefreshTimer;
-  bool _followDriver = false;
+  // An active rider trip should behave like navigation as soon as the driver
+  // location is available. Riders can still turn following off to inspect the
+  // full route.
+  bool _followDriver = true;
 
   @override
   void initState() {
@@ -3181,8 +3184,8 @@ class _DriverFlowMapState extends State<_DriverFlowMap> {
             top: MediaQuery.paddingOf(context).top + 112,
             right: 16,
             child: _DriverMapControl(
-              label: _followDriver ? 'Following' : 'Follow driver',
-              icon: _followDriver ? Icons.gps_fixed : Icons.my_location,
+              label: _followDriver ? 'Navigation on' : 'Follow ride',
+              icon: _followDriver ? Icons.navigation : Icons.my_location,
               onTap: () => setState(() => _followDriver = !_followDriver),
             ),
           ),

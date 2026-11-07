@@ -294,7 +294,7 @@ Polyline citirideRoutePolyline(List<LatLng> points) {
     polylineId: const PolylineId('citiride-route'),
     points: points,
     color: AppColors.citirideYellow,
-    width: kIsWeb ? 5 : 7,
+    width: kIsWeb ? 5 : 6,
     // Routes API points already follow roads. Geodesic interpolation bends
     // their segments and lets the visible route drift off the road geometry.
     geodesic: false,
@@ -305,13 +305,14 @@ Polyline citirideRoutePolyline(List<LatLng> points) {
   );
 }
 
-/// Soft underlay that makes the yellow route read cleaner on dark basemaps.
+/// A restrained shadow keeps the solid route legible without the old, heavy
+/// outlined treatment or decorative direction arrows.
 Polyline citirideRoutePolylineOutline(List<LatLng> points) {
   return Polyline(
     polylineId: const PolylineId('citiride-route-outline'),
     points: points,
-    color: const Color(0xE6000000),
-    width: kIsWeb ? 9 : 12,
+    color: const Color(0x99000000),
+    width: kIsWeb ? 8 : 10,
     geodesic: false,
     jointType: JointType.round,
     startCap: Cap.roundCap,

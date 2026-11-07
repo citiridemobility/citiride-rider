@@ -1490,10 +1490,40 @@ function assertRidePayable(ride, riderId) {
     throw new Error('Driver is not assigned yet');
   }
   const status = String(ride.status || '');
-  if (status !== 'confirm_fare' && status !== 'in_progress') {
+  const alreadyCompletedAndPaid =
+    status === 'completed' && String(ride.paymentStatus || '') === 'paid';
+  if (
+    status !== 'confirm_fare' &&
+    status !== 'in_progress' &&
+    !alreadyCompletedAndPaid
+  ) {
     throw new Error('This trip is not ready for payment');
   }
   return driverId;
+}
+
+/**
+ * Completes legacy paid rides that were recorded before payment completion
+ * became part of the rider payment transaction.
+ */
+async function completePaidRideIfAwaitingConfirmation(rideRef, ride) {
+  if (
+    String(ride.status || '') !== 'confirm_fare' ||
+    String(ride.paymentStatus || '') !== 'paid'
+  ) {
+    return ride;
+  }
+
+  const completedAt = ride.completedAt || new Date();
+  await rideRef.set(
+    {
+      status: 'completed',
+      completedAt,
+      updatedAt: new Date(),
+    },
+    { merge: true },
+  );
+  return { ...ride, status: 'completed', completedAt };
 }
 
 function rideFareNaira(ride) {
@@ -1545,10 +1575,11 @@ export async function payRideFare({ riderId, rideId }) {
     throw error;
   }
 
-  const ride = rideSnap.data() || {};
+  let ride = rideSnap.data() || {};
   const driverId = assertRidePayable(ride, riderId);
 
   if (String(ride.paymentStatus || '') === 'paid') {
+    ride = await completePaidRideIfAwaitingConfirmation(rideRef, ride);
     const wallet = await getOrCreateWallet(riderId);
     return ridePayResult(ride, { alreadyPaid: true, wallet });
   }
@@ -1704,6 +1735,9 @@ export async function payRideFare({ riderId, rideId }) {
         paymentChannel: 'wallet',
         paidAt: now,
         paymentReference: debitRefId,
+        ...(String(rideData.status || '') === 'confirm_fare'
+          ? { status: 'completed', completedAt: now }
+          : {}),
         ...ridePayoutStamp({
           amountNaira,
           percent,
@@ -1753,7 +1787,7 @@ export async function confirmRideCashPayment({ riderId, rideId }) {
     throw error;
   }
 
-  const ride = rideSnap.data() || {};
+  let ride = rideSnap.data() || {};
   assertRidePayable(ride, riderId);
 
   const method = String(ride.paymentMethod || 'cash').toLowerCase();
@@ -1762,6 +1796,7 @@ export async function confirmRideCashPayment({ riderId, rideId }) {
   }
 
   if (String(ride.paymentStatus || '') === 'paid') {
+    ride = await completePaidRideIfAwaitingConfirmation(rideRef, ride);
     return ridePayResult(ride, { alreadyPaid: true });
   }
 
@@ -1786,6 +1821,9 @@ export async function confirmRideCashPayment({ riderId, rideId }) {
         paymentStatus: 'paid',
         paymentChannel: 'cash',
         paidAt: now,
+        ...(String(rideData.status || '') === 'confirm_fare'
+          ? { status: 'completed', completedAt: now }
+          : {}),
         ...ridePayoutStamp({
           amountNaira,
           percent,
