@@ -91,6 +91,7 @@ class RideTripSession {
   final RideRepository _repository;
 
   StreamSubscription<LiveRide>? _rideSub;
+  StreamSubscription<DriverLocation>? _locationSub;
   StreamSubscription<DriverProfileSummary>? _profileSub;
   String? _watchingDriverId;
   RideTripSnapshot? _latest;
@@ -124,7 +125,9 @@ class RideTripSession {
   void _syncDriverWatches(String? driverId) {
     final clean = driverId?.trim();
     if (clean == null || clean.isEmpty) {
+      unawaited(_locationSub?.cancel() ?? Future<void>.value());
       unawaited(_profileSub?.cancel() ?? Future<void>.value());
+      _locationSub = null;
       _profileSub = null;
       _watchingDriverId = null;
       return;
@@ -133,7 +136,31 @@ class RideTripSession {
       return;
     }
     _watchingDriverId = clean;
+    unawaited(_locationSub?.cancel() ?? Future<void>.value());
     unawaited(_profileSub?.cancel() ?? Future<void>.value());
+
+    // The ride document remains the privacy-safe source used by the rider,
+    // but the driver app also publishes a Firestore location heartbeat. Watch
+    // it here as a live fallback so marker updates are not held up by a ride
+    // document write or an app resume.
+    _locationSub = _repository.watchDriverLocation(clean).listen(
+      (location) {
+        final ride = _latest?.ride;
+        if (ride == null || ride.driverId != clean) {
+          return;
+        }
+        _latest = RideTripSnapshot(
+          ride: ride,
+          driverLocation: _newerLocation(location, _latest?.driverLocation),
+          driverProfile: _latest?.driverProfile,
+        );
+        _controller.add(_latest!);
+      },
+      onError: (_) {
+        // The trip-scoped location on the ride remains available if this
+        // optional heartbeat has not been created yet.
+      },
+    );
 
     _profileSub = _repository.watchDriverProfile(clean).listen(
       (profile) {
@@ -165,21 +192,29 @@ class RideTripSession {
       return incoming;
     }
 
+    final incomingMillis = incoming.updatedAt?.millisecondsSinceEpoch ?? 0;
+    final previousMillis = previous.updatedAt?.millisecondsSinceEpoch ?? 0;
+    if (incomingMillis > 0 && previousMillis > 0) {
+      return incomingMillis >= previousMillis ? incoming : previous;
+    }
+
+    // A driver's foreground-location subscription starts a new sequence after
+    // the app is resumed. Only use the sequence when neither update contains
+    // a timestamp; otherwise a fresh position could be rejected forever.
     final incomingSequence = incoming.sequence;
     final previousSequence = previous.sequence;
     if (incomingSequence != null && previousSequence != null) {
       return incomingSequence >= previousSequence ? incoming : previous;
     }
 
-    final incomingMillis = incoming.updatedAt?.millisecondsSinceEpoch ?? 0;
-    final previousMillis = previous.updatedAt?.millisecondsSinceEpoch ?? 0;
-    return incomingMillis >= previousMillis ? incoming : previous;
+    return incoming;
   }
 
   Future<void> cancelRide() => _repository.cancelRide(rideId);
 
   Future<void> dispose() async {
     await _rideSub?.cancel();
+    await _locationSub?.cancel();
     await _profileSub?.cancel();
     await _controller.close();
   }

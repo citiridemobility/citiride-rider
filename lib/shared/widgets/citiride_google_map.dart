@@ -301,6 +301,9 @@ Polyline citirideRoutePolyline(List<LatLng> points) {
     jointType: JointType.round,
     startCap: Cap.roundCap,
     endCap: Cap.roundCap,
+    // Keep the live rider route as a single, solid line. In particular, do
+    // not supply a CustomCap or PatternItem that could render direction arrows.
+    patterns: const <PatternItem>[],
     zIndex: 1,
   );
 }
@@ -317,6 +320,7 @@ Polyline citirideRoutePolylineOutline(List<LatLng> points) {
     jointType: JointType.round,
     startCap: Cap.roundCap,
     endCap: Cap.roundCap,
+    patterns: const <PatternItem>[],
     zIndex: 0,
   );
 }

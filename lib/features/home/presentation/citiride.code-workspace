@@ -9,6 +9,9 @@
     {
       "path": "../../../../../citiride-admin",
     },
+    {
+      "path": "../../../../../citiride waitlist",
+    },
   ],
   "settings": {},
 }

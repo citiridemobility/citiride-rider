@@ -268,7 +268,11 @@ class DriverLocation {
   final int? sequence;
 
   bool get hasValidCoordinates =>
-      lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+      lat >= -90 &&
+      lat <= 90 &&
+      lng >= -180 &&
+      lng <= 180 &&
+      !(lat == 0 && lng == 0);
 
   factory DriverLocation.fromMap(Map<dynamic, dynamic> data) {
     return DriverLocation(

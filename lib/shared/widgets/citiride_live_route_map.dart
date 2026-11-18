@@ -332,7 +332,13 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap>
                         (widget.fitRouteInView
                             ? route?.center
                             : route?.routeStart),
-              cameraZoom: widget.cameraZoom,
+              // A closer camera makes the active trip read as navigation,
+              // rather than a static overview, while still leaving enough of
+              // the road ahead visible.
+              cameraZoom: widget.cameraZoom ??
+                  (widget.followVehicle && _displayVehiclePosition != null
+                      ? 16.5
+                      : null),
               cameraBounds:
                   widget.fitRouteInView &&
                       (!widget.followVehicle ||
