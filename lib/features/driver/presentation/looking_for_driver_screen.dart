@@ -10,6 +10,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../core/auth/citiride_auth_service.dart';
+import '../../../core/auth/citiride_otp_client.dart';
 import '../../../core/location/citiride_fare.dart';
 import '../../../core/location/citiride_place.dart';
 import '../../../core/location/citiride_route.dart';
@@ -299,6 +300,7 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
           riderName: riderProfile.displayName,
         ),
       );
+      unawaited(CitirideOtpClient().notifyDriversOfRideRequest(rideId: ride.id));
 
       if (!mounted) {
         return;
@@ -532,6 +534,7 @@ class _LookingForDriverScreenState extends State<LookingForDriverScreen> {
                     routeSemanticsLabel: 'Looking route direction',
                     showNearbyCars: true,
                     nearbyDrivers: _nearbyDrivers,
+                    lockMapGestures: true,
                   ),
                 ),
                 Positioned(
@@ -1024,7 +1027,7 @@ class _ArrivingScreenState extends State<ArrivingScreen> {
   String? _driverImage;
   String? _driverVehicle;
   String? _driverPlate;
-  int _etaMinutes = 2;
+  int? _etaMinutes;
   bool _hasNavigated = false;
 
   bool get _isRunningWidgetTest {
@@ -1352,7 +1355,10 @@ class _ArrivingScreenState extends State<ArrivingScreen> {
                       final minutes =
                           duration.inSeconds <= 0
                               ? 1
-                              : (duration.inSeconds / 60).ceil().clamp(1, 99);
+                              : (duration.inSeconds / 60)
+                                  .ceil()
+                                  .clamp(1, 99)
+                                  .toInt();
                       if (minutes != _etaMinutes) {
                         setState(() => _etaMinutes = minutes);
                       }
@@ -1809,6 +1815,7 @@ class _DrivingToDestinationScreenState
   String? _driverVehicle;
   String? _driverPlate;
   bool _hasNavigated = false;
+  bool _isTripPanelExpanded = false;
 
   bool get _isRunningWidgetTest {
     return WidgetsBinding.instance.runtimeType.toString().contains(
@@ -2000,10 +2007,17 @@ class _DrivingToDestinationScreenState
         backgroundColor: AppColors.citirideBlack,
         body: LayoutBuilder(
           builder: (context, constraints) {
-            final panelHeight = math.min(
+            final collapsedPanelHeight = math.min(
               276.0,
               math.max(252.0, constraints.maxHeight * 0.31),
             );
+            final expandedPanelHeight = math.min(
+              constraints.maxHeight - 10,
+              math.max(460.0, constraints.maxHeight * 0.66),
+            );
+            final panelHeight = _isTripPanelExpanded
+                ? expandedPanelHeight
+                : collapsedPanelHeight;
 
             return Stack(
               fit: StackFit.expand,
@@ -2038,14 +2052,27 @@ class _DrivingToDestinationScreenState
                     onAddStop: () => _editRoute(context, showStop: true),
                   ),
                 ),
-                Positioned(
+                AnimatedPositioned(
                   left: 0,
                   right: 0,
                   bottom: 0,
                   height: panelHeight,
+                  duration: const Duration(milliseconds: 240),
+                  curve: Curves.easeOutCubic,
                   child: _DrivingToDestinationPanel(
                     destination: _destination,
                     onDestinationTap: () => _editRoute(context),
+                    isExpanded: _isTripPanelExpanded,
+                    onExpand: () {
+                      if (!_isTripPanelExpanded) {
+                        setState(() => _isTripPanelExpanded = true);
+                      }
+                    },
+                    onCollapse: () {
+                      if (_isTripPanelExpanded) {
+                        setState(() => _isTripPanelExpanded = false);
+                      }
+                    },
                     driverName: _driverName,
                     driverImage: _driverImage,
                     driverVehicle: _driverVehicle,
@@ -2208,6 +2235,9 @@ class _DrivingToDestinationPanel extends StatelessWidget {
   const _DrivingToDestinationPanel({
     required this.destination,
     required this.onDestinationTap,
+    required this.isExpanded,
+    required this.onExpand,
+    required this.onCollapse,
     this.driverName = 'Driver',
     this.driverImage,
     this.driverVehicle,
@@ -2216,6 +2246,9 @@ class _DrivingToDestinationPanel extends StatelessWidget {
 
   final String destination;
   final VoidCallback onDestinationTap;
+  final bool isExpanded;
+  final VoidCallback onExpand;
+  final VoidCallback onCollapse;
   final String driverName;
   final String? driverImage;
   final String? driverVehicle;
@@ -2223,8 +2256,28 @@ class _DrivingToDestinationPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      key: const ValueKey('driving-to-destination-card'),
+    final vehicleLabel = driverVehicle?.trim();
+    final plateLabel = driverPlate?.trim();
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onVerticalDragEnd: (details) {
+        final velocity = details.velocity.pixelsPerSecond.dy;
+        if (velocity < -180) {
+          onExpand();
+        } else if (velocity > 180) {
+          onCollapse();
+        }
+      },
+      onVerticalDragUpdate: (details) {
+        final delta = details.primaryDelta ?? 0;
+        if (delta < -8 && !isExpanded) {
+          onExpand();
+        } else if (delta > 8 && isExpanded) {
+          onCollapse();
+        }
+      },
+      child: Container(
+        key: const ValueKey('driving-to-destination-card'),
       padding: EdgeInsets.fromLTRB(
         28,
         10,
@@ -2238,7 +2291,14 @@ class _DrivingToDestinationPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _DriverSheetHandle(),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: isExpanded ? onCollapse : onExpand,
+            child: const Padding(
+              padding: EdgeInsets.symmetric(vertical: 6),
+              child: _DriverSheetHandle(),
+            ),
+          ),
           const SizedBox(height: 18),
           const Text(
             'Driving to destination',
@@ -2260,7 +2320,9 @@ class _DrivingToDestinationPanel extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      driverVehicle ?? 'Vehicle',
+                      vehicleLabel == null || vehicleLabel.isEmpty
+                          ? 'Vehicle details unavailable'
+                          : vehicleLabel,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -2272,7 +2334,8 @@ class _DrivingToDestinationPanel extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    Container(
+                    if (plateLabel != null && plateLabel.isNotEmpty)
+                      Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 6,
                         vertical: 3,
@@ -2282,7 +2345,7 @@ class _DrivingToDestinationPanel extends StatelessWidget {
                         borderRadius: BorderRadius.circular(3),
                       ),
                       child: Text(
-                        driverPlate ?? '',
+                        plateLabel,
                         style: const TextStyle(
                           color: Color(0xFF8F8F8F),
                           fontSize: 11,
@@ -2397,6 +2460,7 @@ class _DrivingToDestinationPanel extends StatelessWidget {
           ),
         ],
       ),
+      ),
     );
   }
 }
@@ -2419,7 +2483,7 @@ class _ArrivingPanel extends StatefulWidget {
     this.driverImage,
     this.driverVehicle,
     this.driverPlate,
-    this.etaMinutes = 2,
+    this.etaMinutes,
   });
 
   final String pickupLocation;
@@ -2438,7 +2502,7 @@ class _ArrivingPanel extends StatefulWidget {
   final String? driverImage;
   final String? driverVehicle;
   final String? driverPlate;
-  final int etaMinutes;
+  final int? etaMinutes;
 
   @override
   State<_ArrivingPanel> createState() => _ArrivingPanelState();
@@ -2580,7 +2644,7 @@ class _ArrivingCollapsedContent extends StatelessWidget {
     this.driverImage,
     this.driverVehicle,
     this.driverPlate,
-    this.etaMinutes = 2,
+    this.etaMinutes,
   });
 
   final String pickupLocation;
@@ -2590,12 +2654,14 @@ class _ArrivingCollapsedContent extends StatelessWidget {
   final String? driverImage;
   final String? driverVehicle;
   final String? driverPlate;
-  final int etaMinutes;
+  final int? etaMinutes;
 
   @override
   Widget build(BuildContext context) {
     final name = driverName.trim().isEmpty ? 'Driver' : driverName.trim();
-    final mins = etaMinutes.clamp(1, 99);
+    final etaLabel = etaMinutes == null
+        ? 'Calculating arrival time…'
+        : 'Arriving in ${etaMinutes!.clamp(1, 99)} min${etaMinutes == 1 ? '' : 's'}';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -2613,7 +2679,7 @@ class _ArrivingCollapsedContent extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          'Arriving In $mins mins',
+          etaLabel,
           textAlign: TextAlign.center,
           style: const TextStyle(
             color: Color(0xFF8F8F8F),
@@ -2676,7 +2742,7 @@ class _ArrivingExpandedContent extends StatelessWidget {
     this.driverImage,
     this.driverVehicle,
     this.driverPlate,
-    this.etaMinutes = 2,
+    this.etaMinutes,
   });
 
   final String pickupLocation;
@@ -2693,12 +2759,14 @@ class _ArrivingExpandedContent extends StatelessWidget {
   final String? driverImage;
   final String? driverVehicle;
   final String? driverPlate;
-  final int etaMinutes;
+  final int? etaMinutes;
 
   @override
   Widget build(BuildContext context) {
     final name = driverName.trim().isEmpty ? 'Driver' : driverName.trim();
-    final mins = etaMinutes.clamp(1, 99);
+    final etaLabel = etaMinutes == null
+        ? 'Calculating arrival time…'
+        : 'Arriving in ${etaMinutes!.clamp(1, 99)} min${etaMinutes == 1 ? '' : 's'}';
     return SingleChildScrollView(
       physics: showFullDetails
           ? const ClampingScrollPhysics()
@@ -2720,7 +2788,7 @@ class _ArrivingExpandedContent extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Arriving In $mins mins',
+          etaLabel,
             textAlign: TextAlign.center,
             style: const TextStyle(
               color: Color(0xFF8F8F8F),
@@ -3006,6 +3074,7 @@ class _DriverFlowMap extends StatefulWidget {
     this.vehicleWidth = 44,
     this.vehicleHeight = 54,
     this.nearbyDrivers = const [],
+    this.lockMapGestures = false,
     /// When true and [driverLatLng] is set, draw driver→pickup (on-the-way).
     this.routeDriverToPickup = false,
     this.onRouteDuration,
@@ -3024,6 +3093,7 @@ class _DriverFlowMap extends StatefulWidget {
   final double vehicleWidth;
   final double vehicleHeight;
   final List<NearbyDriver> nearbyDrivers;
+  final bool lockMapGestures;
   final bool routeDriverToPickup;
   final ValueChanged<Duration>? onRouteDuration;
 
@@ -3128,7 +3198,11 @@ class _DriverFlowMapState extends State<_DriverFlowMap> {
       _route = route;
       _isLoadingRoute = false;
     });
-    widget.onRouteDuration?.call(route.duration);
+    // A pickup→destination preview is not the driver's arrival ETA. Only
+    // publish a duration once a live driver location is available.
+    if (widget.routeDriverToPickup && driver != null) {
+      widget.onRouteDuration?.call(route.duration);
+    }
   }
 
   bool _sameLatLng(LatLng? first, LatLng? second) {
@@ -3171,6 +3245,9 @@ class _DriverFlowMapState extends State<_DriverFlowMap> {
           cameraBoundsPadding: 132,
           fitRouteInView: true,
           nearbyDrivers: widget.nearbyDrivers,
+          scrollGesturesEnabled: !widget.lockMapGestures,
+          zoomGesturesEnabled: !widget.lockMapGestures,
+          rotateGesturesEnabled: !widget.lockMapGestures,
         ),
         if (_isLoadingRoute)
           Positioned(

@@ -215,21 +215,28 @@ class RideRepository {
 
   /// Every ride belonging to a rider, including live and completed trips.
   ///
-  /// Only rides created today or later are included, keeping prior test and
-  /// historical records out of the in-app history. Ordering happens after
-  /// reading the rider's own documents so a recently completed trip moves to
-  /// the top immediately.
+  /// Live rides are always retained. Terminal history is limited to today
+  /// onward after the snapshot is read, avoiding a riderId + createdAt
+  /// composite-index dependency that otherwise makes the tab look empty.
   Stream<List<LiveRide>> watchRidesForRider(String riderId) {
     return _rides
         .where(FirestoreFields.riderId, isEqualTo: riderId)
-        .where(
-          FirestoreFields.createdAt,
-          isGreaterThanOrEqualTo: Timestamp.fromDate(_startOfToday()),
-        )
         .snapshots()
         .map((snap) {
+          final startOfToday = _startOfToday();
           final rides = snap.docs
               .map((doc) => LiveRide.fromMap(doc.id, doc.data()))
+              .where((ride) {
+                if (!ride.status.isTerminal) {
+                  return true;
+                }
+                final occurredAt = ride.completedAt ??
+                    ride.cancelledAt ??
+                    ride.updatedAt ??
+                    ride.createdAt;
+                return occurredAt == null ||
+                    !occurredAt.toDate().isBefore(startOfToday);
+              })
               .toList(growable: false)
             ..sort(
               (first, second) => _rideActivityMillis(

@@ -7,6 +7,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../data/ride_repository.dart';
 import '../domain/live_ride.dart';
+import '../../../core/notifications/rider_push_notifications.dart';
 
 /// Snapshot of the active trip for map + screen routing.
 class RideTripSnapshot {
@@ -104,6 +105,7 @@ class RideTripSession {
     _rideSub?.cancel();
     _rideSub = _repository.watchRide(rideId).listen(
       (ride) {
+        final previousStatus = _latest?.ride.status;
         final sameDriver =
             ride.driverId != null &&
             ride.driverId!.trim().isNotEmpty &&
@@ -116,6 +118,11 @@ class RideTripSession {
           driverProfile: sameDriver ? _latest?.driverProfile : null,
         );
         _controller.add(_latest!);
+        if ((previousStatus == null || previousStatus == RideStatus.requested) &&
+            (ride.status == RideStatus.accepted ||
+                ride.status == RideStatus.arriving)) {
+          RiderPushNotifications.instance.announceRideAccepted(ride.id);
+        }
         _syncDriverWatches(ride.driverId);
       },
       onError: _controller.addError,

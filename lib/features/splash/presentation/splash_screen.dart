@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../core/auth/citiride_auth_service.dart';
 import '../../../core/firebase/firebase_bootstrap.dart';
+import '../../../core/notifications/rider_push_notifications.dart';
 import '../../../core/session/citiride_session_store.dart';
 import '../../../shared/widgets/compatible_svg_picture.dart';
 import '../../profile/domain/rider_profile.dart';
@@ -84,6 +85,7 @@ class _SplashScreenState extends State<SplashScreen> {
         }
         final riderId = CitirideAuthService().riderIdForEmail(email);
         if (riderId != null && riderId.isNotEmpty) {
+          unawaited(RiderPushNotifications.instance.configureForRider(riderId));
           final activeRide = await RideRepository()
               .findActiveRideForRider(riderId)
               .timeout(const Duration(seconds: 5), onTimeout: () => null);

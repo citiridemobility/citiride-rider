@@ -342,6 +342,7 @@ class DriverProfileSummary {
 
   factory DriverProfileSummary.fromMap(String id, Map<String, dynamic> data) {
     final vehicleDetails = asStringKeyedMap(data['vehicleDetails']);
+    final vehicleInfo = asStringKeyedMap(data['vehicleInfo']);
     final personalInfo = asStringKeyedMap(data['personalInfo']);
 
     String? firstNonEmpty(List<String?> values) {
@@ -383,12 +384,18 @@ class DriverProfileSummary {
         data['vehicleMakeModel'] as String?,
         data['vehicleModel'] as String?,
         vehicleDetails?['vehicleMakeModel'] as String?,
+        vehicleDetails?['makeModel'] as String?,
+        vehicleInfo?['vehicleMakeModel'] as String?,
+        vehicleInfo?['makeModel'] as String?,
         data['vehicle'] as String?,
       ]),
       plateNumber: firstNonEmpty([
         data['vehiclePlateNumber'] as String?,
         data['vehiclePlate'] as String?,
         vehicleDetails?['vehiclePlateNumber'] as String?,
+        vehicleDetails?['plateNumber'] as String?,
+        vehicleInfo?['vehiclePlateNumber'] as String?,
+        vehicleInfo?['plateNumber'] as String?,
         data['plateNumber'] as String?,
       ]),
     );

@@ -40,6 +40,9 @@ class CitirideLiveRouteMap extends StatefulWidget {
     this.cameraZoom,
     this.mapPadding = EdgeInsets.zero,
     this.nearbyDrivers = const [],
+    this.scrollGesturesEnabled = true,
+    this.zoomGesturesEnabled = true,
+    this.rotateGesturesEnabled = true,
     this.onMapTap,
     this.onCameraMove,
     this.onCameraIdle,
@@ -83,6 +86,12 @@ class CitirideLiveRouteMap extends StatefulWidget {
   final ValueChanged<LatLng>? onMapTap;
   final ValueChanged<CameraPosition>? onCameraMove;
   final VoidCallback? onCameraIdle;
+
+  /// Matching sheets sit over this map. They can opt out of map gestures so a
+  /// vertical swipe stays a sheet/screen gesture instead of panning the map.
+  final bool scrollGesturesEnabled;
+  final bool zoomGesturesEnabled;
+  final bool rotateGesturesEnabled;
 
   static const designSize = Size(390, 844);
   @override
@@ -361,29 +370,9 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap>
                     zIndexInt: 5,
                   ),
                 if (route != null && icons != null) ...{
-                  // Prefer Flutter overlay (label + pin). Native pin only while
-                  // screen projection is still resolving.
-                  if (widget.showDestinationMarker &&
-                      _destinationScreen == null)
-                    Marker(
-                      markerId: const MarkerId(
-                        'citiride-route-destination-pin',
-                      ),
-                      position: route.routeEnd,
-                      icon: icons.destinationPin,
-                      anchor: const Offset(0.5, 0.5),
-                      zIndexInt: 4,
-                    ),
-                  if (widget.showPickupMarker &&
-                      !widget.showPickupPulse &&
-                      _pickupScreen == null)
-                    Marker(
-                      markerId: const MarkerId('citiride-route-pickup-pin'),
-                      position: route.routeStart,
-                      icon: icons.pickupPin,
-                      anchor: const Offset(0.5, 0.5),
-                      zIndexInt: 3,
-                    ),
+                  // Endpoint UI is rendered only by the projected Flutter
+                  // overlays below. Mixing those with native Map markers is
+                  // what produced duplicate pickup and destination pins.
                   if (_displayVehiclePosition == null &&
                       widget.vehicleProgress != null)
                     _routeVehicleMarker(
@@ -403,6 +392,9 @@ class _CitirideLiveRouteMapState extends State<CitirideLiveRouteMap>
               onMapTap: widget.onMapTap,
               onCameraMove: _handleCameraMove,
               onCameraIdle: _handleCameraIdle,
+              scrollGesturesEnabled: widget.scrollGesturesEnabled,
+              zoomGesturesEnabled: widget.zoomGesturesEnabled,
+              rotateGesturesEnabled: widget.rotateGesturesEnabled,
               polylines: {
                 if (route != null) ...citirideRoutePolylines(route.points),
               },
@@ -700,13 +692,13 @@ Set<Marker> _realNearbyVehicleMarkers(
   };
 }
 
-/// Google Maps rotation is clockwise from north. Vehicle bitmaps are drawn
-/// nose-up, so the location heading maps 1:1.
+/// The shared car PNG is painted 26° to the right of north. Correct the
+/// artwork before applying Maps' clockwise-from-north location heading.
 double _vehicleRotation(double heading) {
   if (heading.isNaN || heading < 0) {
     return 0;
   }
-  return heading % 360;
+  return (heading - 26 + 360) % 360;
 }
 
 _RoutePolylinePoint _pointAlongPolyline(List<LatLng> points, double progress) {
@@ -1052,8 +1044,8 @@ class _RouteMarkerIcons {
   ) async {
     try {
       if (assetName.toLowerCase().endsWith('.png')) {
-        // The supplied vehicle bitmap is already a north-facing, transparent
-        // marker. Keep it unmodified so a GPS heading of 0 points up.
+        // Rotation is applied by [_vehicleRotation], which compensates for
+        // the diagonal orientation of this transparent PNG.
         return await BitmapDescriptor.asset(
           ImageConfiguration(size: Size(width, height)),
           assetName,

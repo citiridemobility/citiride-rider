@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:http/http.dart' as http;
 
 import 'citiride_auth_service.dart';
@@ -116,6 +118,35 @@ class CitirideOtpClient {
     }
 
     throw _mapError(response);
+  }
+
+  /// Best-effort trigger for the server-side Expo Push fan-out. It never
+  /// blocks creating the Firestore ride when a push service is unavailable.
+  Future<void> notifyDriversOfRideRequest({required String rideId}) async {
+    if (!hasConfiguredBaseUrl || rideId.trim().isEmpty || Firebase.apps.isEmpty) {
+      return;
+    }
+    try {
+      final idToken = await FirebaseAuth.instance.currentUser?.getIdToken();
+      if (idToken == null || idToken.isEmpty) {
+        return;
+      }
+      await _client
+          .post(
+            Uri.parse('$_baseUrl/v1/notifications/ride-request'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'Authorization': 'Bearer $idToken',
+            },
+            body: jsonEncode({'rideId': rideId.trim()}),
+          )
+          .timeout(const Duration(seconds: 12));
+    } on Object catch (error) {
+      if (kDebugMode) {
+        debugPrint('Ride-request push trigger failed: $error');
+      }
+    }
   }
 
   Future<http.Response> _post(String path, Map<String, Object?> body) async {
