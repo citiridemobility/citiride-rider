@@ -698,7 +698,7 @@ double _vehicleRotation(double heading) {
   if (heading.isNaN || heading < 0) {
     return 0;
   }
-  return (heading - 26 + 360) % 360;
+  return heading % 360;
 }
 
 _RoutePolylinePoint _pointAlongPolyline(List<LatLng> points, double progress) {
@@ -1044,13 +1044,51 @@ class _RouteMarkerIcons {
   ) async {
     try {
       if (assetName.toLowerCase().endsWith('.png')) {
-        // Rotation is applied by [_vehicleRotation], which compensates for
-        // the diagonal orientation of this transparent PNG.
-        return await BitmapDescriptor.asset(
-          ImageConfiguration(size: Size(width, height)),
-          assetName,
-          width: width,
-          height: height,
+        final data = await rootBundle.load(assetName);
+        final codec = await ui.instantiateImageCodec(
+          data.buffer.asUint8List(),
+          targetWidth: (width * 3).round(),
+          targetHeight: (height * 3).round(),
+        );
+        final frame = await codec.getNextFrame();
+        final car = frame.image;
+        final squareLogical = math.max(width, height);
+        final squarePx = (squareLogical * 3).round();
+        final recorder = ui.PictureRecorder();
+        final canvas = Canvas(recorder);
+        canvas.translate(squarePx / 2, squarePx / 2);
+        // The supplied PNG points 26° to the right of north. Normalise the
+        // bitmap once, then marker rotations can use true GPS headings.
+        canvas.rotate(-26 * math.pi / 180);
+        canvas.drawImageRect(
+          car,
+          Rect.fromLTWH(
+            0,
+            0,
+            car.width.toDouble(),
+            car.height.toDouble(),
+          ),
+          Rect.fromCenter(
+            center: Offset.zero,
+            width: width * 3,
+            height: height * 3,
+          ),
+          Paint()..filterQuality = FilterQuality.high,
+        );
+        car.dispose();
+        codec.dispose();
+        final image = await recorder.endRecording().toImage(squarePx, squarePx);
+        final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+        final bytes = byteData?.buffer.asUint8List() ?? Uint8List(0);
+        if (bytes.isEmpty) {
+          return BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueYellow,
+          );
+        }
+        return BitmapDescriptor.bytes(
+          bytes,
+          width: squareLogical,
+          height: squareLogical,
         );
       }
 

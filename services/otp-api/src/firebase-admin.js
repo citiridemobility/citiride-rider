@@ -91,11 +91,21 @@ async function ensureAuthUserWithEmail(uid, email) {
     });
   } catch (error) {
     if (error?.code === 'auth/user-not-found') {
-      await admin.auth().createUser({
-        uid,
-        email: normalized,
-        emailVerified: true,
-      });
+      try {
+        await admin.auth().createUser({
+          uid,
+          email: normalized,
+          emailVerified: true,
+        });
+      } catch (createError) {
+        // The same email may already be assigned to a rider, a legacy user,
+        // or another role. Custom tokens are UID-based, so this must not
+        // prevent a valid OTP login from creating its Firebase session.
+        console.warn(
+          'ensureAuthUserWithEmail create failed:',
+          createError?.code || createError,
+        );
+      }
       return;
     }
     // Email already used on another uid — keep token minting working.

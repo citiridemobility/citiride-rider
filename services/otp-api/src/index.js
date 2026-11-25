@@ -472,14 +472,31 @@ app.post('/v1/driver/otp/verify', async (req, res) => {
 
     let firebaseCustomToken = null;
     let driverId = null;
+    let tokenError = null;
     try {
       const minted = await createDriverCustomToken(email);
       if (minted) {
         firebaseCustomToken = minted.token;
         driverId = minted.uid;
       }
-    } catch (tokenError) {
-      console.error('driver custom token failed', tokenError);
+    } catch (error) {
+      tokenError = error;
+      console.error('driver custom token failed', error);
+    }
+
+    // Never report a successful OTP verification without the Firebase session
+    // token the driver app requires to actually sign in.
+    if (!firebaseCustomToken || !driverId) {
+      if (!tokenError) {
+        console.error(
+          'driver custom token unavailable: Firebase Admin credentials are not configured',
+        );
+      }
+      return res.status(503).json({
+        error: 'firebase_auth_unavailable',
+        message:
+          'Sign-in is temporarily unavailable. Please try again shortly.',
+      });
     }
 
     const welcomeEmail = await sendDriverWelcomeEmail(email);
